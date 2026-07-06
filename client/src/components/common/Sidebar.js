@@ -54,8 +54,8 @@ export default function Sidebar() {
   }[user.role];
 
   return (
-    <div className="sidebar">
-      <div className="sidebar-logo"><img src={logo} alt="J Eighteen Beauty Salon Academy" style={{ height:40, marginRight:12 }} />
+    <div className="sidebar" style={{ textAlign: 'center' }}>
+      <div className="sidebar-logo"><img src={logo} alt="J Eighteen Beauty Salon Academy" style={{ height:73, marginRight:12 }} />
         <h1></h1>
         <div><span>J Eighteen Beauty Salon Academy</span></div>
       </div>

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import logo from '../assets/logo2.png'
 
 export default function Login() {
   const [email, setEmail] = useState('');
@@ -24,8 +25,10 @@ export default function Login() {
     <div className="login-page">
       <div className="login-card">
         <div style={{ marginBottom: 32 }}>
-          <div style={{ fontSize: 32, marginBottom: 8 }}>✂️</div>
-          <h1>Salon Manager</h1>
+          <div style={{ fontSize: 32, marginBottom: 8, textAlign: 'center'}}>
+            <img src={logo} alt="J Eighteen Beauty Salon Academy" style={{ height:100, width:100, marginRight:12 }} />
+          </div>
+          <h1>J Eighteen Beauty Salon Academy</h1>
           <p>Stock & Sales Analysis System</p>
         </div>
 
@@ -68,10 +71,7 @@ export default function Login() {
           </button>
         </form>
 
-        <div style={{ marginTop: 24, padding: 16, background: 'rgba(139,92,246,0.1)', borderRadius: 8, fontSize: 12, color: '#A78BFA' }}>
-          <strong>Default Login:</strong><br />
-          admin@salon.com / Admin@123
-        </div>
+        
       </div>
     </div>
   );
