@@ -1,0 +1,13 @@
+{
+  "name": "salon-system",
+  "version": "1.0.0",
+  "description": "Salon Stock and Sales Analysis System",
+  "scripts": {
+    "install:all": "npm install && npm install --prefix server && npm install --prefix client",
+    "dev": "concurrently \"npm run dev --prefix server\" \"npm start --prefix client\"",
+    "start": "cd server && npm start"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.0"
+  }
+}
