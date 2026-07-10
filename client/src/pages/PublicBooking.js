@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useLocation } from 'react-router-dom';
 import axios from 'axios';
 import logo from '../assets/logo2.png'
 
@@ -165,6 +166,7 @@ async function initiateRazorpay({ appointmentId, amount, customerName, customerP
 // ── Main Component ────────────────────────────────────────────────────────────
 export default function PublicBooking() {
   const phoneRef = useRef(null);
+  const location = useLocation();
   const [services, setServices]       = useState([]);
   const [specialists, setSpecialists] = useState([]);
   const [blackoutDates, setBlackoutDates] = useState([]);
@@ -227,6 +229,27 @@ export default function PublicBooking() {
     };
     loadData();
   }, []);
+
+  useEffect(() => {
+    if (!services.length) return;
+
+    const params = new URLSearchParams(location.search);
+    const serviceId = parseInt(params.get("service"));
+
+    if (!serviceId) return;
+
+    const exists = services.some(s => s.id === serviceId);
+
+    if (exists) {
+      setSelectedServices([serviceId]);
+
+      const service = services.find(s => s.id === serviceId);
+
+      if (service?.category_name) {
+        setCategoryTab(service.category_name);
+      }
+    }
+  }, [services, location.search]);
 
   // Phone lookup
   useEffect(() => {
