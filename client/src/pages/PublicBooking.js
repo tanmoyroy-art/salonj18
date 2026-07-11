@@ -92,7 +92,7 @@ function SuccessScreen({ result, paymentType, onReset }) {
       <div style={{ fontSize:80, marginBottom:16 }}>{paymentType==='online' ? '💳' : '🎉'}</div>
       <h2 style={{ fontSize:28, fontWeight:800, color:'#1F2937', marginBottom:8 }}>Booking Confirmed!</h2>
       <p style={{ color:'#6B7280', marginBottom:32 }}>
-        {paymentType==='online' ? 'Payment received. Your appointment is confirmed!' : 'See you at the salon! Payment at desk.'}
+        {paymentType==='online' ? 'Payment received. Your appointment is confirmed!' : paymentType==='upi_pending' ? 'UPI payment submitted! Admin will verify your UTR and confirm booking.' : 'See you at the salon! Payment at desk.'}
       </p>
       <div style={{ background:'linear-gradient(135deg,#8B5CF6,#EC4899)', borderRadius:16, padding:24, color:'white', marginBottom:24, textAlign:'left' }}>
         <div style={{ fontSize:12, opacity:0.8, marginBottom:4 }}>BOOKING ID</div>
@@ -197,6 +197,10 @@ export default function PublicBooking() {
   const [popupService, setPopupService]   = useState(null);
   const [razorpayLoaded, setRazorpayLoaded] = useState(false);
   const [activeOffer, setActiveOffer]     = useState(null);
+  const [upiPanel, setUpiPanel]         = useState(null);
+  const [utrNumber, setUtrNumber]       = useState('');
+  const [submittingUtr, setSubmittingUtr] = useState(false);
+  const isMobile = /Mobi|Android/i.test(navigator.userAgent);
 
   // Load Razorpay SDK
   useEffect(() => {
@@ -358,6 +362,61 @@ export default function PublicBooking() {
     } catch (err) {
       alert(err.response?.data?.error || 'Booking failed');
     } finally { setSubmitting(false); }
+  };
+
+  const handlePayUPI = async () => {
+    if (!validate()) return;
+    setSubmitting(true);
+    try {
+      const data = await bookAppointment();
+      // Fetch UPI string from backend
+      const upiRes = await axios.get(`/api/public/upi-string/${data.appointment_id}/${data.payable}`);
+      setUpiPanel({
+        appointment_id: data.appointment_id,
+        amount: data.payable,
+        upi_string: upiRes.data.upi_string,
+        upi_id: upiRes.data.upi_id,
+        upi_name: upiRes.data.upi_name,
+      });
+      // Generate QR on desktop
+      if (!isMobile) {
+        setTimeout(() => {
+          const el = document.getElementById('upi-qr-canvas');
+          if (el && window.QRCode) {
+            el.innerHTML = ''; // clear previous QR if any
+            new window.QRCode(el, {
+              text: upiRes.data.upi_string,
+              width: 200,
+              height: 200,
+              colorDark: '#065F46',
+              colorLight: '#ffffff',
+              correctLevel: window.QRCode.CorrectLevel.H,
+            });
+          } else {
+            console.warn('QRCode library not loaded or element not found');
+          }
+        }, 500); // slightly longer delay to ensure DOM is ready
+      }
+    } catch (err) {
+      alert(err.response?.data?.error || 'Booking failed');
+    } finally { setSubmitting(false); }
+  };
+
+  const handleConfirmUPI = async () => {
+    if (utrNumber.length < 12) return alert('Enter a valid 12-digit UTR number');
+    setSubmittingUtr(true);
+    try {
+      await axios.post('/api/public/upi-submit', {
+        appointment_id: upiPanel.appointment_id,
+        amount: upiPanel.amount,
+        utr_number: utrNumber,
+      });
+      setResult({ appointment_id: upiPanel.appointment_id, total: upiPanel.amount, membership_discount: 0, payable: upiPanel.amount });
+      setPaymentType('upi_pending');
+      setUpiPanel(null);
+    } catch (err) {
+      alert(err.response?.data?.error || 'Submission failed');
+    } finally { setSubmittingUtr(false); }
   };
 
   const handlePayOnline = async () => {
@@ -688,7 +747,7 @@ export default function PublicBooking() {
               )}
 
               {/* Payment Options */}
-              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
+              {/* <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
                 <button style={{ ...btnSecondary, padding:'14px', fontSize:15, opacity:submitting?0.7:1 }}
                   onClick={handlePayDesk} disabled={submitting}>
                   🏦 Pay at Salon Desk
@@ -700,7 +759,70 @@ export default function PublicBooking() {
               </div>
               <div style={{ textAlign:'center', fontSize:11, color:'#9CA3AF', marginTop:8 }}>
                 🔒 Online payments powered by Razorpay · Secure & encrypted
+              </div> */}
+              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12, marginBottom:12 }}>
+                <button style={{ ...btnSecondary, padding:'14px', fontSize:15, opacity:submitting?0.7:1 }}
+                  onClick={handlePayDesk} disabled={submitting}>
+                  🏦 Pay at Salon Desk
+                </button>
+                <button style={{ ...btnPrimary, padding:'14px', fontSize:15, background:'linear-gradient(135deg,#059669,#047857)', opacity:submitting?0.7:1 }}
+                  onClick={handlePayUPI} disabled={submitting}>
+                  📱 Pay via UPI
+                </button>
               </div>
+              <div style={{ textAlign:'center', fontSize:11, color:'#9CA3AF', marginTop:4 }}>
+                🔒 UPI payments go directly to salon · Zero fees
+              </div>
+
+              {/* UPI Payment Panel — shows after booking */}
+              {upiPanel && (
+                <div style={{ marginTop:16, background:'#F0FDF4', border:'1.5px solid #86EFAC', borderRadius:14, padding:20 }}>
+                  <div style={{ fontWeight:700, fontSize:15, color:'#065F46', marginBottom:12 }}>📱 Complete Your UPI Payment</div>
+
+                  {/* Mobile: intent button | Desktop: QR */}
+                  {isMobile ? (
+                    <a href={upiPanel.upi_string}
+                      style={{ display:'block', textAlign:'center', background:'#059669', color:'white', padding:'12px', borderRadius:10, fontWeight:700, fontSize:15, textDecoration:'none', marginBottom:12 }}>
+                      Open GPay / PhonePe / BHIM →
+                    </a>
+                  ) : (
+                    <div style={{ textAlign:'center', marginBottom:12 }}>
+                      <div style={{ fontSize:12, color:'#6B7280', marginBottom:8 }}>Scan with any UPI app</div>
+                      <div id="upi-qr-canvas" style={{ borderRadius:8, border:'1px solid #E5E7EB', display:'inline-block' }} />
+                      <div style={{ fontSize:11, color:'#9CA3AF', marginTop:4 }}>Amount locked: ₹{upiPanel.amount}</div>
+                    </div>
+                  )}
+
+                  <div style={{ background:'white', borderRadius:8, padding:12, marginBottom:12, fontSize:13, color:'#374151' }}>
+                    <div>Pay to: <strong>{upiPanel.upi_name}</strong></div>
+                    <div>UPI ID: <strong>{upiPanel.upi_id}</strong></div>
+                    <div>Amount: <strong style={{ color:'#059669' }}>₹{upiPanel.amount}</strong></div>
+                    <div style={{ fontSize:11, color:'#9CA3AF', marginTop:4 }}>Ref: Appt_{upiPanel.appointment_id}</div>
+                  </div>
+
+                  <div style={{ marginBottom:10 }}>
+                    <label style={{ fontSize:13, fontWeight:600, color:'#374151', display:'block', marginBottom:5 }}>
+                      Enter 12-digit UPI Reference / UTR Number *
+                    </label>
+                    <input style={{ ...inp(), letterSpacing:2, fontWeight:700 }}
+                      placeholder="e.g. 426123456789"
+                      maxLength={20}
+                      value={utrNumber}
+                      onChange={e => setUtrNumber(e.target.value.replace(/\D/g,''))}
+                    />
+                    <div style={{ fontSize:11, color:'#9CA3AF', marginTop:3 }}>
+                      Found in your UPI app under payment history
+                    </div>
+                  </div>
+
+                  <button
+                    style={{ ...btnPrimary, width:'100%', padding:'13px', fontSize:15, background:'#059669', opacity:submittingUtr?0.7:1 }}
+                    onClick={handleConfirmUPI}
+                    disabled={submittingUtr || utrNumber.length < 12}>
+                    {submittingUtr ? '⏳ Confirming...' : '✅ Confirm Payment'}
+                  </button>
+                </div>
+              )}
 
               {Object.keys(errors).length>0 && (
                 <div style={{ marginTop:12, fontSize:13, color:'#DC2626', textAlign:'center' }}>⚠️ Please fix the errors above.</div>

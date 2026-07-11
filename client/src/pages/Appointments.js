@@ -653,6 +653,7 @@ export default function Appointments() {
     in_progress: 'badge-warning',
     completed: 'badge-success',
     cancelled: 'badge-danger',
+    pending_verification: 'badge-warning',
   };
 
   if (loading) return <div className="spinner" />;
@@ -785,6 +786,30 @@ export default function Appointments() {
                         )}
                         {a.status === 'completed' && a.payment_status !== 'paid' && (
                           <button className="btn btn-primary btn-sm" onClick={() => setPaymentAppt(a)}>💳 Pay</button>
+                        )}
+                        {a.payment_status === 'pending_verification' && (
+                          <button className="btn btn-success btn-sm"
+                            onClick={async () => {
+                              // Fetch UTR details first
+                              const upi = await api.get(`/appointments/${a.id}/upi-details`);
+                              const utr = upi.data?.utr_number || 'Not submitted';
+                              const confirmed = window.confirm(
+                                `UPI Payment Details:\n\n` +
+                                `Customer: ${a.customer_name}\n` +
+                                `Amount: ₹${upi.data?.amount || a.total_amount}\n` +
+                                `UTR Number: ${utr}\n` +
+                                `Submitted: ${upi.data?.submitted_at ? new Date(upi.data.submitted_at).toLocaleString('en-IN') : '-'}\n\n` +
+                                `Please check your UPI app/bank statement and confirm this UTR matches.\n\n` +
+                                `Click OK to VERIFY and mark as PAID.`
+                              );
+                              if (!confirmed) return;
+                              try {
+                                await api.patch(`/appointments/${a.id}/verify-upi`);
+                                load();
+                              } catch (err) { alert(err.response?.data?.error || 'Verification failed'); }
+                            }}>
+                            ✅ Verify UPI
+                          </button>
                         )}
                       </div>
                     </td>

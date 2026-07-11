@@ -260,4 +260,41 @@ router.post('/book', async (req, res) => {
   } finally { client.release(); }
 });
 
+// UPI: submit UTR after customer pays
+router.post('/upi-submit', async (req, res) => {
+  try {
+    const { appointment_id, amount, utr_number } = req.body;
+    if (!utr_number || utr_number.length < 12)
+      return res.status(400).json({ error: 'Enter a valid 12-digit UTR number' });
+
+    await pool.query(
+      `INSERT INTO upi_payments (appointment_id, amount, utr_number)
+       VALUES ($1, $2, $3)`,
+      [appointment_id, amount, utr_number]
+    );
+
+    await pool.query(
+      `UPDATE appointments 
+       SET payment_status='pending_verification', upi_utr=$1, payment_type='online', updated_at=NOW()
+       WHERE id=$2`,
+      [utr_number, appointment_id]
+    );
+
+    res.json({ success: true, message: 'Payment submitted for verification' });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// UPI: get UPI string for QR/intent (public)
+router.get('/upi-string/:appointmentId/:amount', async (req, res) => {
+  try {
+    const { appointmentId, amount } = req.params;
+    const upiId   = process.env.UPI_ID   || 'salon@upi';
+    const upiName = process.env.UPI_NAME || 'Salon';
+    const note    = `Appt_${appointmentId}`;
+
+    const upiString = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(upiName)}&am=${amount}&cu=INR&tn=${encodeURIComponent(note)}`;
+    res.json({ upi_string: upiString, upi_id: upiId, upi_name: upiName });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 module.exports = router;

@@ -232,4 +232,58 @@ router.patch('/:id/payment', authenticate, authorize('super_admin', 'receptionis
   } finally { client.release(); }
 });
 
+// Admin: verify UPI payment
+router.patch('/:id/verify-upi', authenticate, authorize('super_admin', 'receptionist'), async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const appt = await client.query('SELECT * FROM appointments WHERE id=$1', [req.params.id]);
+    if (!appt.rows.length) throw new Error('Appointment not found');
+    const a = appt.rows[0];
+
+    const netPayable = parseFloat(a.total_amount) - parseFloat(a.membership_discount || 0) - parseFloat(a.offer_discount || 0);
+
+    await client.query(
+      `UPDATE appointments 
+       SET payment_status='paid', payment_method='upi', amount_paid=$1, updated_at=NOW()
+       WHERE id=$2`,
+      [netPayable, req.params.id]
+    );
+
+    await client.query(
+      `UPDATE upi_payments 
+       SET status='verified', verified_at=NOW(), verified_by=$1
+       WHERE appointment_id=$2`,
+      [req.user.id, req.params.id]
+    );
+
+    // Award loyalty points
+    try {
+      const { awardPointsAfterPayment } = require('./loyalty');
+      await awardPointsAfterPayment(client, parseInt(req.params.id), a.customer_id, netPayable, req.user.id);
+    } catch (_) {}
+
+    await client.query('COMMIT');
+    res.json({ success: true, message: 'UPI payment verified' });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: err.message });
+  } finally { client.release(); }
+});
+
+// Get UPI payment details for an appointment
+router.get('/:id/upi-details', authenticate, authorize('super_admin', 'receptionist'), async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT utr_number, amount, status, submitted_at 
+       FROM upi_payments 
+       WHERE appointment_id = $1 
+       ORDER BY submitted_at DESC LIMIT 1`,
+      [req.params.id]
+    );
+    res.json(result.rows[0] || null);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 module.exports = router;
