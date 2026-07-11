@@ -288,8 +288,8 @@ router.post('/upi-submit', async (req, res) => {
 router.get('/upi-string/:appointmentId/:amount', async (req, res) => {
   try {
     const { appointmentId, amount } = req.params;
-    const upiId   = process.env.UPI_ID   || 'salon@upi';
-    const upiName = process.env.UPI_NAME || 'Salon';
+    const upiId   = process.env.UPI_ID   || 'jyotiejagwani@okhdfcbank';
+    const upiName = process.env.UPI_NAME || 'J Eighteen Beauty Salon Academy';
     const note    = `Appt_${appointmentId}`;
 
     const upiString = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(upiName)}&am=${amount}&cu=INR&tn=${encodeURIComponent(note)}`;
