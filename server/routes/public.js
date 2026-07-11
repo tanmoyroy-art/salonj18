@@ -157,13 +157,13 @@ router.post('/book', async (req, res) => {
     if (existing.rows.length > 0) {
       customerId = existing.rows[0].id;
       await client.query(
-        'UPDATE customers SET name=$1, email=$2, updated_at=NOW() WHERE id=$3',
-        [customer.name, customer.email || null, customerId]
+        'UPDATE customers SET name=$1, email=$2, whatsapp_number=$3, updated_at=NOW() WHERE id=$4',
+        [customer.name, customer.email || null, customer.whatsapp_number || null, customerId]
       );
     } else {
       const newC = await client.query(
-        'INSERT INTO customers (name, phone, email, date_of_birth) VALUES ($1,$2,$3,$4) RETURNING id',
-        [customer.name, customer.phone, customer.email || null, customer.date_of_birth || null]
+        'INSERT INTO customers (name, phone, email, date_of_birth, whatsapp_number) VALUES ($1,$2,$3,$4,$5) RETURNING id',
+        [customer.name, customer.phone, customer.email || null, customer.date_of_birth || null, customer.whatsapp_number || null]
       );
       customerId = newC.rows[0].id;
     }

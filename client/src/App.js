@@ -18,6 +18,7 @@ import Membership from './pages/Membership';
 import Loyalty from './pages/Loyalty';
 import Offers from './pages/Offers';
 import PublicBooking from './pages/PublicBooking';
+import { Toaster } from 'react-hot-toast';
 
 function RequireAuth({ children, roles }) {
   const { user } = useAuth();
@@ -43,7 +44,7 @@ function AppRoutes() {
   return (
     <Routes>
       {/* Public booking — no login needed */}
-      <Route path="/book" element={<PublicBooking />} />
+      <Route path="/appointment" element={<PublicBooking />} />
 
       <Route path="/login" element={user ? <Navigate to="/" replace /> : <Login />} />
 
@@ -134,6 +135,7 @@ export default function App() {
       <AuthProvider>
         <AppRoutes />
       </AuthProvider>
+      <Toaster position="top-center" />
     </BrowserRouter>
   );
 }

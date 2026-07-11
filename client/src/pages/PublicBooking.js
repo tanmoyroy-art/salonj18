@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useLocation } from 'react-router-dom';
 import axios from 'axios';
 import logo from '../assets/logo2.png'
+import toast from 'react-hot-toast';
 
 const api = axios.create({ baseURL: '/api/public' });
 const MEDIA_URL = (fn) => `/api/services/media/file/${fn}`;
@@ -14,11 +15,16 @@ const TIER_STYLE = {
 
 function generateSlots() {
   const slots = [];
-  for (let h = 9; h <= 20; h++)
-    for (let m of [0, 30]) {
-      if (h === 20 && m === 30) continue;
-      slots.push(`${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`);
-    }
+  let minutes = 10 * 60 + 30; // 10:30 AM
+  const end = 19 * 60;         // 7:00 PM
+  while (minutes <= end) {
+    const h = Math.floor(minutes / 60);
+    const m = minutes % 60;
+    slots.push(
+      `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
+    );
+    minutes += 30;
+  }
   return slots;
 }
 const ALL_SLOTS = generateSlots();
@@ -178,6 +184,7 @@ export default function PublicBooking() {
   const [name, setName]               = useState('');
   const [email, setEmail]             = useState('');
   const [dob, setDob]                 = useState('');
+  const [whatsapp, setWhatsapp]       = useState('');
   const [selectedServices, setSelectedServices] = useState([]);
   const [categoryTab, setCategoryTab] = useState('All');
   const [serviceSearch, setServiceSearch] = useState('');
@@ -327,22 +334,56 @@ export default function PublicBooking() {
     return list;
   }, [services, categoryTab, serviceSearch]);
 
-  const validate = () => {
-    const e = {};
-    if (!phone || phone.length!==10) e.phone = 'Enter a valid 10-digit number';
-    if (!name.trim()) e.name = 'Name is required';
-    if (!selectedServices.length) e.services = 'Select at least one service';
-    if (!date) e.date = 'Select a date';
-    if (isBlackout) e.date = 'Blackout day — please pick another date';
-    if (!time) e.time = 'Select a time slot';
-    setErrors(e);
-    return !Object.keys(e).length;
-  };
+  // const validate = () => {
+  //   const e = {};
+  //   if (!phone || phone.length!==10) e.phone = 'Enter a valid 10-digit number';
+  //   if (!name.trim()) e.name = 'Name is required';
+  //   if (!selectedServices.length) e.services = 'Select at least one service';
+  //   if (!date) e.date = 'Select a date';
+  //   if (isBlackout) e.date = 'Blackout day — please pick another date';
+  //   if (!time) e.time = 'Select a time slot';
+  //   setErrors(e);
+  //   return !Object.keys(e).length;
+  // };
+
+
+const validate = () => {
+  const e = {};
+
+  if (!phone || phone.length !== 10)
+    e.phone = "Enter a valid 10-digit number";
+
+  if (!name.trim())
+    e.name = "Name is required";
+
+  if (!selectedServices.length)
+    e.services = "Select at least one service";
+
+  if (!date)
+    e.date = "Select a date";
+
+  if (isBlackout)
+    e.date = "Blackout day — please pick another date";
+
+  if (!time)
+    e.time = "Select a time slot";
+
+  setErrors(e);
+
+ if (Object.keys(e).length > 0) {
+  Object.values(e).forEach((error) => {
+    toast.error(error);
+  });
+  return false;
+}
+
+  return true;
+};
 
   // Book appointment (returns appointment data)
   const bookAppointment = async () => {
     const res = await api.post('/book', {
-      customer: { name, phone, email, date_of_birth: dob||null },
+      customer: { name, phone, email, date_of_birth: dob||null, whatsapp_number: whatsapp||phone },
       services: selectedServices,
       specialist_id: specialistId||null,
       appointment_date: `${date}T${time}:00`,
@@ -493,7 +534,7 @@ export default function PublicBooking() {
               <p style={{ color:'#6B7280', fontSize:14, marginBottom:28 }}>Fill in your details and we'll see you soon!</p>
 
               {/* 1. Phone */}
-              <Section label="1. Contact Number" error={errors.phone}>
+              <Section label="1. Mobile Number" error={errors.phone}>
                 <div style={{ position:'relative' }}>
                   <input ref={phoneRef} style={inp(errors.phone)} type="tel" placeholder="10-digit mobile number"
                     maxLength={10} value={phone}
@@ -527,9 +568,28 @@ export default function PublicBooking() {
                 <Section label="3. Email"><input style={inp()} type="email" placeholder="email@example.com" value={email} onChange={e=>setEmail(e.target.value)} /></Section>
                 <Section label="4. Date of Birth"><input style={inp()} type="date" value={dob} onChange={e=>setDob(e.target.value)} /></Section>
               </div>
-
+              <Section label="5. WhatsApp Number">
+                <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+                  <label style={{ display:'flex', alignItems:'center', gap:8, cursor:'pointer', fontSize:13 }}>
+                    <input
+                      type="checkbox"
+                      checked={whatsapp === phone}
+                      onChange={e => setWhatsapp(e.target.checked ? phone : '')}
+                    />
+                    <span style={{ color:'#374151' }}>Same as contact number</span>
+                  </label>
+                  <input
+                    style={inp()}
+                    type="tel"
+                    placeholder="WhatsApp number (if different)"
+                    maxLength={10}
+                    value={whatsapp}
+                    onChange={e => setWhatsapp(e.target.value.replace(/\D/g, ''))}
+                  />
+                </div>
+              </Section>
               {/* 5. Services — Category tabs + search + card grid */}
-              <Section label="5. Select Services" error={errors.services}>
+              <Section label="6. Select Services" error={errors.services}>
 
                 {/* Search bar */}
                 <div style={{ position:'relative', marginBottom:10 }}>
@@ -652,14 +712,14 @@ export default function PublicBooking() {
               </Section>
 
               {/* 6. Date */}
-              <Section label="6. Date of Appointment" error={errors.date}>
+              <Section label="7. Date of Appointment" error={errors.date}>
                 <input style={inp(errors.date||isBlackout)} type="date" min={today} value={date}
                   onChange={e=>{ setDate(e.target.value); setErrors(x=>({...x,date:null})); }} />
                 {isBlackout && <div style={{ marginTop:6, fontSize:12, color:'#DC2626', background:'#FEF2F2', padding:'6px 12px', borderRadius:8 }}>🚫 Blackout day — membership discount not available</div>}
               </Section>
 
               {/* 7. Specialist */}
-              <Section label="7. Preferred Specialist">
+              <Section label="8. Preferred Specialist">
                 <select style={inp()} value={specialistId} onChange={e=>setSpecialistId(e.target.value)}>
                   <option value="">Any Available Specialist</option>
                   {specialists.map(s=><option key={s.id} value={s.id}>{s.name}{s.specialization?` — ${s.specialization}`:''}</option>)}
@@ -667,7 +727,7 @@ export default function PublicBooking() {
               </Section>
 
               {/* 8. Time */}
-              <Section label={`8. Select Time${totalDuration>0?` (session: ${totalDuration} min)`:''}`} error={errors.time}>
+              <Section label={`9. Select Time${totalDuration>0?` (session: ${totalDuration} min)`:''}`} error={errors.time}>
                 {!date ? <div style={hint}>Select a date first</div>
                 : !selectedServices.length ? <div style={hint}>Select services first to see available times</div>
                 : loadingSlots ? <div style={hint}>Loading available times…</div>
@@ -698,7 +758,7 @@ export default function PublicBooking() {
               </Section>
 
               {/* 9. Notes */}
-              <Section label="9. Special Requests (Optional)">
+              <Section label="10. Special Requests (Optional)">
                 <textarea style={{ ...inp(), minHeight:80, resize:'vertical' }} placeholder="Allergies, preferences, special instructions…" value={notes} onChange={e=>setNotes(e.target.value)} />
               </Section>
 
@@ -769,6 +829,7 @@ export default function PublicBooking() {
                   onClick={handlePayUPI} disabled={submitting}>
                   📱 Pay via UPI
                 </button>
+
               </div>
               <div style={{ textAlign:'center', fontSize:11, color:'#9CA3AF', marginTop:4 }}>
                 🔒 UPI payments go directly to salon · Zero fees
@@ -824,9 +885,21 @@ export default function PublicBooking() {
                 </div>
               )}
 
-              {Object.keys(errors).length>0 && (
+              {/* {Object.keys(errors).length>0 && (
                 <div style={{ marginTop:12, fontSize:13, color:'#DC2626', textAlign:'center' }}>⚠️ Please fix the errors above.</div>
-              )}
+              )} */}
+              {/* {Object.values(errors).length > 0 && (
+  <div
+    style={{
+      marginTop: 12,
+      fontSize: 13,
+      color: "#DC2626",
+      textAlign: "center",
+    }}
+  >
+    {Object.values(errors).join(", ")}
+  </div>
+)} */}
             </>
           )}
         </div>
