@@ -855,7 +855,15 @@ const validate = () => {
                       {/* PhonePe */}
                       <a href={`phonepe://pay?pa=${encodeURIComponent(upiPanel.upi_id)}&pn=${encodeURIComponent(upiPanel.upi_name)}&am=${upiPanel.amount}&cu=INR&tn=Appt_${upiPanel.appointment_id}`}
                         style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:10, background:'white', border:'2px solid #E5E7EB', color:'#374151', padding:'11px', borderRadius:10, fontWeight:600, fontSize:14, textDecoration:'none' }}>
-                        <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/5/5f/PhonePe_Logo.svg/120px-PhonePe_Logo.svg.png" style={{ height:24 }} alt="PhonePe" />
+                        <span style={{
+                            background: '#5f259f',
+                            color: 'white',
+                            fontWeight: 800,
+                            fontSize: 12,
+                            padding: '3px 8px',
+                            borderRadius: 6,
+                            letterSpacing: 0.5
+                          }}>Pe</span>
                         Pay with PhonePe
                       </a>
                       {/* BHIM / generic fallback */}

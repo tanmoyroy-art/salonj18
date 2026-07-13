@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import api from '../utils/api';
+import MembershipCard from '../components/MembershipCard';
 
 const TIER_STYLE = {
   basic:   { bg: '#F9FAFB', border: '#D1D5DB', badge: 'badge-gray',   icon: '🥈', label: 'Basic'   },
@@ -204,6 +205,15 @@ function BlackoutCalendar({ blackouts, onAdd, onRemove }) {
 function AssignModal({ plans, onClose, onSuccess }) {
   const [phone, setPhone] = useState('');
   const [customer, setCustomer] = useState(null);
+  const [isNewCustomer, setIsNewCustomer] = useState(false);
+  const [sameWhatsapp, setSameWhatsapp] = useState(true);
+  const [customerForm, setCustomerForm] = useState({
+      name: '',
+      phone: '',
+      email: '',
+      whatsapp_number: '',
+      date_of_birth: '',
+  });
   const [plan, setPlan] = useState('');
   const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
   const [loading, setLoading] = useState(false);
@@ -211,20 +221,56 @@ function AssignModal({ plans, onClose, onSuccess }) {
   const lookup = async () => {
     try {
       const res = await api.get(`/customers/lookup/${phone}`);
-      if (res.data.exists) setCustomer(res.data.customer);
-      else alert('Customer not found');
-    } catch { alert('Customer not found'); }
-  };
+      if (res.data.exists) {
+          setCustomer(res.data.customer);
+          setIsNewCustomer(false);
+      }
+      else {
+          setCustomer(null);
+          setIsNewCustomer(true);
 
+          setCustomerForm({
+              name: '',
+              phone,
+              email: '',
+              whatsapp_number: '',
+              date_of_birth: '',
+          });
+      }
+    } catch (err) {
+        if (err.response?.status === 404) {
+            setCustomer(null);
+            setIsNewCustomer(true);
+            setCustomerForm({
+                name: '',
+                phone,
+                email: '',
+                whatsapp_number: '',
+                date_of_birth: '',
+            });
+            return;
+        }
+        alert(err.response?.data?.error || 'Lookup failed');
+    }
+  };
+  
   const handleAssign = async () => {
-    if (!customer || !plan) return;
+    if (!plan) return;
     setLoading(true);
     try {
-      await api.post('/membership/assign', {
-        customer_id: customer.id,
-        plan_id: parseInt(plan),
-        start_date: startDate,
-      });
+      // await api.post('/membership/assign', {
+      //   customer_id: customer.id,
+      //   plan_id: parseInt(plan),
+      //   start_date: startDate,
+      // });
+      const payload = { plan_id: Number(plan), start_date: startDate };
+      if(customer){
+          payload.customer_id = customer.id;
+      }else{
+          payload.customer = customerForm;
+      }
+      console.log(payload);
+      const res = await api.post('/membership/assign',payload);
       onSuccess();
       onClose();
     } catch (err) {
@@ -246,12 +292,69 @@ function AssignModal({ plans, onClose, onSuccess }) {
             <label className="form-label">Customer Phone</label>
             <div style={{ display: 'flex', gap: 8 }}>
               <input className="form-control" placeholder="Mobile number" value={phone}
-                onChange={e => setPhone(e.target.value)} onKeyDown={e => e.key === 'Enter' && lookup()} />
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setPhone(value);
+
+                  if (isNewCustomer) {
+                      setCustomerForm(prev => ({
+                          ...prev,
+                          phone: value,
+                          whatsapp_number: sameWhatsapp ? value : prev.whatsapp_number
+                      }));
+                  }
+              }}
+              onKeyDown={e => e.key === 'Enter' && lookup()} />
               <button className="btn btn-primary btn-sm" onClick={lookup}>Find</button>
+            </div>
+            <div className="form-group">
+              <label>
+              <input type="checkbox" checked={sameWhatsapp}
+                  onChange={(e) => {
+                      const checked = e.target.checked;
+                      setSameWhatsapp(checked);
+                      setCustomerForm(prev => ({
+                          ...prev,
+                          whatsapp_number: checked ? prev.phone : ''
+                      }));
+                  }}
+              /> Same as Contact Number
+              </label>
             </div>
           </div>
           {customer && (
             <div className="alert alert-success">✅ {customer.name} ({customer.phone})</div>
+          )}
+          {isNewCustomer && (
+            <div className="card" style={{marginBottom:20}}>
+                <h4>Create New Customer</h4>
+                <div className="form-group">
+                    <label>Name</label>
+                    <input className="form-control" value={customerForm.name} onChange={(e)=> setCustomerForm({...customerForm, name:e.target.value})}/>
+                </div>
+                <div className="form-group">
+                    <label>Email</label>
+                    <input className="form-control" value={customerForm.email} onChange={(e)=> setCustomerForm({...customerForm, email:e.target.value})}/>
+                </div>
+                <div className="form-group">
+                  <label>WhatsApp Number</label>
+                  <input
+                      className="form-control"
+                      value={customerForm.whatsapp_number}
+                      disabled={sameWhatsapp}
+                      onChange={(e) =>
+                          setCustomerForm({
+                              ...customerForm,
+                              whatsapp_number: e.target.value
+                          })
+                      }
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Date of Birth</label>
+                  <input type="date" className="form-control" value={customerForm.date_of_birth} onChange={(e)=> setCustomerForm({ ...customerForm, date_of_birth:e.target.value})}/>
+                </div>
+            </div>
           )}
           <div className="form-group">
             <label className="form-label">Membership Plan</label>
@@ -276,7 +379,7 @@ function AssignModal({ plans, onClose, onSuccess }) {
         </div>
         <div className="modal-footer">
           <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={handleAssign} disabled={!customer || !plan || loading}>
+          <button className="btn btn-primary" onClick={handleAssign} >
             {loading ? 'Assigning…' : '✅ Assign Membership'}
           </button>
         </div>
@@ -293,6 +396,8 @@ export default function Membership() {
   const [blackouts, setBlackouts] = useState([]);
   const [showAssign, setShowAssign] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [cardData,setCardData]=useState(null);
+  const [showCard,setShowCard]=useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -314,7 +419,20 @@ export default function Membership() {
     await api.post('/membership/blackout', { date, reason });
     load();
   };
-
+  const openMembershipCard = async(customerId)=>{
+    try{
+        const res = await api.get(
+            `/membership/card/${customerId}`
+        );
+        setCardData(res.data);
+        setShowCard(true);
+    }catch(err){
+        alert(
+            err.response?.data?.error ||
+            "Unable to load membership card."
+        );
+    }
+  };
   const removeBlackout = async (row) => {
     if (!window.confirm(`Remove blackout for ${row.date}?`)) return;
     await api.delete(`/membership/blackout/${row.id}`);
@@ -400,6 +518,8 @@ export default function Membership() {
                   <th>Discount</th>
                   <th>Valid Until</th>
                   <th>Paid</th>
+                  <th>Member ID</th>
+                  <th>Card</th>
                   <th>Actions</th>
                 </tr>
               </thead>
@@ -425,6 +545,10 @@ export default function Membership() {
                         </div>
                       </td>
                       <td>₹{parseFloat(m.amount_paid || 0).toLocaleString('en-IN')}</td>
+                      <td><span className="badge badge-primary">{m.membership_card_id}</span></td>
+                      <td>
+                        <button className="btn btn-primary btn-sm" onClick={() => openMembershipCard(m.customer_id)}>🪪 View Card</button>
+                      </td>
                       <td>
                         <button className="btn btn-danger btn-sm" onClick={() => cancelMembership(m.id)}>Cancel</button>
                       </td>
@@ -469,7 +593,12 @@ export default function Membership() {
           </div>
         </div>
       )}
-
+      {showCard && (
+          <MembershipCard
+              data={cardData}
+              onClose={()=>setShowCard(false)}
+          />
+      )}
       {/* History Tab */}
       {tab === 'history' && (
         <div className="card">
