@@ -884,14 +884,38 @@ const validate = () => {
                     <label style={{ fontSize:13, fontWeight:600, color:'#374151', display:'block', marginBottom:5 }}>
                       Enter 12-digit UPI Reference / UTR Number *
                     </label>
-                    <input style={{ ...inp(), letterSpacing:2, fontWeight:700 }}
+                    <input
+                      style={{
+                        ...inp(),
+                        letterSpacing:2,
+                        fontWeight:700,
+                        borderColor: utrNumber.length > 0 && utrNumber.length < 12 ? '#EF4444' : utrNumber.length === 12 ? '#059669' : undefined
+                      }}
                       placeholder="e.g. 426123456789"
                       maxLength={20}
                       value={utrNumber}
                       onChange={e => setUtrNumber(e.target.value.replace(/\D/g,''))}
                     />
-                    <div style={{ fontSize:11, color:'#9CA3AF', marginTop:3 }}>
-                      Found in your UPI app under payment history
+                    {/* Character counter + validation message */}
+                    <div style={{ display:'flex', justifyContent:'space-between', marginTop:4 }}>
+                      <div style={{ fontSize:11 }}>
+                        {utrNumber.length === 0 && (
+                          <span style={{ color:'#9CA3AF' }}>Found in your UPI app under payment history</span>
+                        )}
+                        {utrNumber.length > 0 && utrNumber.length < 12 && (
+                          <span style={{ color:'#EF4444', fontWeight:600 }}>
+                            ⚠️ UTR must be 12 digits — {12 - utrNumber.length} more needed
+                          </span>
+                        )}
+                        {utrNumber.length >= 12 && (
+                          <span style={{ color:'#059669', fontWeight:600 }}>
+                            ✅ UTR number looks good
+                          </span>
+                        )}
+                      </div>
+                      <div style={{ fontSize:11, color: utrNumber.length === 12 ? '#059669' : '#9CA3AF', fontWeight:600 }}>
+                        {utrNumber.length}/12
+                      </div>
                     </div>
                   </div>
 
