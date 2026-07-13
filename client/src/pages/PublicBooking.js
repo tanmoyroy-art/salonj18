@@ -842,10 +842,29 @@ const validate = () => {
 
                   {/* Mobile: intent button | Desktop: QR */}
                   {isMobile ? (
-                    <a href={upiPanel.upi_string}
-                      style={{ display:'block', textAlign:'center', background:'#059669', color:'white', padding:'12px', borderRadius:10, fontWeight:700, fontSize:15, textDecoration:'none', marginBottom:12 }}>
-                      Open GPay / PhonePe / BHIM →
-                    </a>
+                    <div style={{ display:'flex', flexDirection:'column', gap:8, marginBottom:12 }}>
+                      <div style={{ fontSize:12, color:'#6B7280', marginBottom:4, textAlign:'center' }}>
+                        Choose your UPI app to pay
+                      </div>
+                      {/* GPay */}
+                      <a href={`gpay://upi/pay?pa=${encodeURIComponent(process.env.REACT_APP_UPI_ID||'')}&pn=${encodeURIComponent(upiPanel.upi_name)}&am=${upiPanel.amount}&cu=INR&tn=Appt_${upiPanel.appointment_id}`}
+                        style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:10, background:'white', border:'2px solid #E5E7EB', color:'#374151', padding:'11px', borderRadius:10, fontWeight:600, fontSize:14, textDecoration:'none' }}>
+                        <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/f/f2/Google_Pay_Logo.svg/120px-Google_Pay_Logo.svg.png" style={{ height:24 }} alt="GPay" />
+                        Pay with Google Pay
+                      </a>
+                      {/* PhonePe */}
+                      <a href={`phonepe://pay?pa=${encodeURIComponent(upiPanel.upi_id)}&pn=${encodeURIComponent(upiPanel.upi_name)}&am=${upiPanel.amount}&cu=INR&tn=Appt_${upiPanel.appointment_id}`}
+                        style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:10, background:'white', border:'2px solid #E5E7EB', color:'#374151', padding:'11px', borderRadius:10, fontWeight:600, fontSize:14, textDecoration:'none' }}>
+                        <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/5/5f/PhonePe_Logo.svg/120px-PhonePe_Logo.svg.png" style={{ height:24 }} alt="PhonePe" />
+                        Pay with PhonePe
+                      </a>
+                      {/* BHIM / generic fallback */}
+                      <a href={upiPanel.upi_string}
+                        style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:10, background:'white', border:'2px solid #E5E7EB', color:'#374151', padding:'11px', borderRadius:10, fontWeight:600, fontSize:14, textDecoration:'none' }}>
+                        <span style={{ fontSize:20 }}>💳</span>
+                        Other UPI App (BHIM, Paytm...)
+                      </a>
+                    </div>
                   ) : (
                     <div style={{ textAlign:'center', marginBottom:12 }}>
                       <div style={{ fontSize:12, color:'#6B7280', marginBottom:8 }}>Scan with any UPI app</div>
