@@ -422,6 +422,8 @@ function PaymentModal({ appointment, onClose, onSuccess }) {
   const [redeemPoints, setRedeemPoints]     = useState(0);
   const [loadingPoints, setLoadingPoints]   = useState(true);
   const [result, setResult]                 = useState(null);
+  const [cashbackData, setCashbackData]   = useState(null);
+  const [redeemCashback, setRedeemCashback] = useState(0);
 
   const tierStyle = TIER_STYLE[appointment.membership_tier] || {};
 
@@ -433,11 +435,20 @@ function PaymentModal({ appointment, onClose, onSuccess }) {
       .finally(() => setLoadingPoints(false));
   }, [appointment.customer_phone]);
 
+  // Load cashback balance
+  useEffect(() => {
+    api.get(`/cashback/lookup/${appointment.customer_phone}`)
+      .then(r => setCashbackData(r.data))
+      .catch(() => setCashbackData(null));
+  }, [appointment.customer_phone]);
+
   const maxRedeemable = pointsData ? parseFloat(pointsData.total_points || 0) : 0;
   const redemptionRate = pointsData?.redemption_rate || 100;
   const pointsDiscountAmt = parseFloat(redeemPoints || 0) / redemptionRate;
 
-  const totalDiscount = membershipDiscount + parseFloat(extraDiscount || 0) + pointsDiscountAmt;
+  // const totalDiscount = membershipDiscount + parseFloat(extraDiscount || 0) + pointsDiscountAmt;
+  const cashbackDiscountAmt = parseFloat(redeemCashback || 0);
+  const totalDiscount = membershipDiscount + parseFloat(extraDiscount || 0) + pointsDiscountAmt + cashbackDiscountAmt;
   const netPayable    = Math.max(0, subtotal - totalDiscount);
   const balance       = netPayable - parseFloat(amountPaid || 0);
 
@@ -452,6 +463,7 @@ function PaymentModal({ appointment, onClose, onSuccess }) {
         amount_paid: amountPaid,
         extra_discount: extraDiscount,
         redeem_points: parseFloat(redeemPoints || 0),
+        redeem_cashback: parseFloat(redeemCashback || 0),
       });
       setResult(res.data);
     } catch (err) {
@@ -576,13 +588,55 @@ function PaymentModal({ appointment, onClose, onSuccess }) {
             </div>
           )}
 
+          {/* Cashback redemption */}
+          {cashbackData && parseFloat(cashbackData.cashback_balance) > 0 && (
+            <div style={{ background: '#FFF7ED', border: '1.5px solid #FED7AA', borderRadius: 10, padding: 14, marginBottom: 12 }}>
+              <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 8, color: '#92400E' }}>
+                💰 Cashback Wallet
+              </div>
+              <div style={{ fontSize: 12, color: '#6B7280', marginBottom: 8 }}>
+                Available: <strong>₹{parseFloat(cashbackData.cashback_balance).toFixed(2)}</strong>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <input
+                  type="number"
+                  style={{ width: 100, padding: '6px 10px', border: '1.5px solid #FED7AA', borderRadius: 8, fontSize: 14, textAlign: 'center' }}
+                  value={redeemCashback}
+                  min={0}
+                  max={parseFloat(cashbackData.cashback_balance)}
+                  step={1}
+                  onChange={e => setRedeemCashback(Math.min(parseFloat(e.target.value) || 0, parseFloat(cashbackData.cashback_balance)))}
+                />
+                <span style={{ fontSize: 13, color: '#6B7280' }}>₹</span>
+                {parseFloat(redeemCashback) > 0 && (
+                  <span style={{ fontSize: 13, color: '#059669', fontWeight: 600 }}>
+                    = ₹{parseFloat(redeemCashback).toFixed(2)} off
+                  </span>
+                )}
+                <button className="btn btn-secondary btn-sm"
+                  onClick={() => setRedeemCashback(parseFloat(cashbackData.cashback_balance))}>
+                  Use All
+                </button>
+                <button className="btn btn-secondary btn-sm"
+                  onClick={() => setRedeemCashback(0)}>
+                  Clear
+                </button>
+              </div>
+            </div>
+          )}
+
           {balance > 0.01 && (
             <div className="alert alert-warning">⚠️ Balance remaining: ₹{balance.toFixed(2)}</div>
           )}
           {balance <= 0.01 && amountPaid > 0 && (
             <div className="alert alert-success">✅ Full payment received</div>
           )}
-
+          {cashbackDiscountAmt > 0 && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14, color: '#D97706', marginBottom: 8, background: '#FFF7ED', padding: '6px 10px', borderRadius: 8 }}>
+              <span>💰 Cashback Redeemed</span>
+              <span style={{ fontWeight: 700 }}>−₹{cashbackDiscountAmt.toFixed(2)}</span>
+            </div>
+          )}
           {/* Post-payment success */}
           {result && (
             <div style={{ background: '#ECFDF5', border: '1px solid #A7F3D0', borderRadius: 10, padding: 14, marginTop: 8 }}>
@@ -590,6 +644,11 @@ function PaymentModal({ appointment, onClose, onSuccess }) {
               {result.points_earned > 0 && (
                 <div style={{ fontSize: 13, color: '#059669' }}>
                   ⭐ <strong>+{result.points_earned} loyalty points</strong> have been added to customer's account!
+                </div>
+              )}
+              {result.cashback_earned > 0 && (
+                <div style={{ fontSize: 13, color: '#D97706', marginTop: 4 }}>
+                  💰 <strong>₹{result.cashback_earned} cashback</strong> added to customer's wallet (first visit bonus!)
                 </div>
               )}
               {result.points_redeemed > 0 && (

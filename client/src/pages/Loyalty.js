@@ -263,7 +263,110 @@ function CustomerPointsModal({ customer, onClose, onRefresh }) {
     </div>
   );
 }
+function CashbackSettings() {
+  const [form, setForm] = useState({ cashback_enabled: 'true', cashback_percent: '20', cashback_expiry_days: '90' });
+  const [overview, setOverview] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
 
+  useEffect(() => {
+    Promise.all([
+      api.get('/cashback/settings'),
+      api.get('/cashback/overview')
+    ]).then(([s, o]) => {
+      const map = {};
+      s.data.forEach(r => map[r.key] = r.value);
+      setForm(map);
+      setOverview(o.data);
+    }).finally(() => setLoading(false));
+  }, []);
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      await api.put('/cashback/settings', form);
+      alert('Cashback settings saved!');
+    } catch (err) { alert('Failed to save'); }
+    finally { setSaving(false); }
+  };
+
+  if (loading) return <div className="spinner" />;
+
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+      <div className="card">
+        <h3 className="card-title" style={{ marginBottom: 20 }}>💰 First-Visit Cashback Settings</h3>
+        <p style={{ fontSize: 13, color: 'var(--gray-500)', marginBottom: 20 }}>
+          Automatically give cashback to customers on their very first visit. They can redeem it on future visits.
+        </p>
+        <div className="form-group">
+          <label className="form-label">Enable Cashback</label>
+          <select className="form-control" value={form.cashback_enabled}
+            onChange={e => setForm({ ...form, cashback_enabled: e.target.value })}>
+            <option value="true">✅ Enabled</option>
+            <option value="false">🚫 Disabled</option>
+          </select>
+        </div>
+        <div className="form-group">
+          <label className="form-label">Cashback % on First Visit</label>
+          <input type="number" className="form-control" value={form.cashback_percent} min={1} max={100}
+            onChange={e => setForm({ ...form, cashback_percent: e.target.value })} />
+          <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 4 }}>
+            e.g. 20 means customer gets ₹200 cashback on ₹1000 first visit
+          </div>
+        </div>
+        <div className="form-group">
+          <label className="form-label">Cashback Expiry (days)</label>
+          <input type="number" className="form-control" value={form.cashback_expiry_days} min={1}
+            onChange={e => setForm({ ...form, cashback_expiry_days: e.target.value })} />
+        </div>
+        <div style={{ background: '#FFF7ED', borderRadius: 10, padding: 14, marginBottom: 16, fontSize: 13 }}>
+          <strong>Example:</strong> Customer pays ₹1,000 on first visit →
+          gets <strong style={{ color: '#D97706' }}>₹{Math.round(1000 * form.cashback_percent / 100)} cashback</strong> in wallet →
+          can use on next visit → expires in <strong>{form.cashback_expiry_days} days</strong>
+        </div>
+        <button className="btn btn-primary" onClick={save} disabled={saving}>
+          {saving ? 'Saving...' : '💾 Save Settings'}
+        </button>
+      </div>
+
+      <div className="card">
+        <h3 className="card-title" style={{ marginBottom: 16 }}>👥 Customer Cashback Wallets</h3>
+        {overview.length > 0 ? (
+          <div className="table-wrapper">
+            <table>
+              <thead>
+                <tr>
+                  <th>Customer</th>
+                  <th>Balance</th>
+                  <th>Lifetime</th>
+                </tr>
+              </thead>
+              <tbody>
+                {overview.map(c => (
+                  <tr key={c.id}>
+                    <td>
+                      <div style={{ fontWeight: 500 }}>{c.name}</div>
+                      <div style={{ fontSize: 12, color: 'var(--gray-400)' }}>{c.phone}</div>
+                    </td>
+                    <td style={{ fontWeight: 700, color: '#D97706', fontSize: 16 }}>
+                      ₹{parseFloat(c.balance).toFixed(2)}
+                    </td>
+                    <td style={{ color: 'var(--gray-500)', fontSize: 13 }}>
+                      ₹{parseFloat(c.lifetime_earned).toFixed(2)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="empty-state">No cashback wallets yet</div>
+        )}
+      </div>
+    </div>
+  );
+}
 // ── Main Loyalty Page ─────────────────────────────────────────────────────────
 export default function Loyalty() {
   const [tab, setTab]               = useState('settings');
@@ -299,6 +402,7 @@ export default function Loyalty() {
         {[
           { key: 'settings', label: '⚙️ Settings & Rates' },
           { key: 'members',  label: '👥 Members Points' },
+          { key: 'cashback', label: '💰 Cashback Settings' },
         ].map(t => (
           <button key={t.key} className={`tab ${tab === t.key ? 'active' : ''}`} onClick={() => setTab(t.key)}>
             {t.label}
@@ -373,6 +477,7 @@ export default function Loyalty() {
           </div>
         )
       )}
+      {tab === 'cashback' && <CashbackSettings />}
 
       {selectedCustomer && (
         <CustomerPointsModal

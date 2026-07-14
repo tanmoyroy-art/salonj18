@@ -3,6 +3,7 @@ const router = express.Router();
 const { pool } = require('../db');
 const { authenticate, authorize } = require('../middleware/auth');
 const { awardPointsAfterPayment, redeemPoints } = require('./loyalty');
+const { awardFirstVisitCashback, redeemCashback } = require('./cashback');
 const { getActiveOffer } = require('./offers');
 
 // Get appointments
@@ -180,7 +181,7 @@ router.patch('/:id/payment', authenticate, authorize('super_admin', 'receptionis
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    const { payment_method, amount_paid, extra_discount, redeem_points } = req.body;
+    const { payment_method, amount_paid, extra_discount, redeem_points, redeem_cashback } = req.body;
 
     const appt = await client.query('SELECT * FROM appointments WHERE id=$1', [req.params.id]);
     if (!appt.rows.length) throw new Error('Appointment not found');
@@ -190,6 +191,8 @@ router.patch('/:id/payment', authenticate, authorize('super_admin', 'receptionis
     const extraDiscount      = parseFloat(extra_discount || 0);
     let pointsDiscount       = 0;
     let pointsRedeemed       = 0;
+    let cashbackDiscount     = 0;
+    let cashbackRedeemed     = 0;
 
     // Redeem points if requested
     if (redeem_points && parseFloat(redeem_points) > 0) {
@@ -197,7 +200,13 @@ router.patch('/:id/payment', authenticate, authorize('super_admin', 'receptionis
       pointsDiscount = await redeemPoints(client, a.id, a.customer_id, pointsRedeemed, req.user.id);
     }
 
-    const totalDiscount = membershipDiscount + extraDiscount + pointsDiscount;
+    // const totalDiscount = membershipDiscount + extraDiscount + pointsDiscount;
+    // Redeem cashback if requested
+    if (redeem_cashback && parseFloat(redeem_cashback) > 0) {
+      cashbackRedeemed = parseFloat(redeem_cashback);
+      cashbackDiscount = await redeemCashback(client, a.id, a.customer_id, cashbackRedeemed, req.user.id);
+    }
+    const totalDiscount = membershipDiscount + extraDiscount + pointsDiscount + cashbackDiscount;
     const netPayable    = Math.max(0, parseFloat(a.total_amount) - totalDiscount);
     const paid          = parseFloat(amount_paid || 0);
     const paymentStatus = paid >= netPayable ? 'paid' : paid > 0 ? 'partial' : 'pending';
@@ -214,6 +223,11 @@ router.patch('/:id/payment', authenticate, authorize('super_admin', 'receptionis
     if (paymentStatus === 'paid') {
       pointsEarned = await awardPointsAfterPayment(client, a.id, a.customer_id, paid, req.user.id);
     }
+    // Award first-visit cashback
+    let cashbackEarned = 0;
+    if (paymentStatus === 'paid') {
+      cashbackEarned = await awardFirstVisitCashback(client, a.id, a.customer_id, paid, req.user.id);
+    }
 
     await client.query('COMMIT');
 
@@ -225,6 +239,8 @@ router.patch('/:id/payment', authenticate, authorize('super_admin', 'receptionis
       points_redeemed: pointsRedeemed,
       points_discount: pointsDiscount,
       points_earned: pointsEarned,
+      cashback_earned: cashbackEarned,
+      cashback_redeemed: cashbackRedeemed,
     });
   } catch (err) {
     await client.query('ROLLBACK');
@@ -262,6 +278,11 @@ router.patch('/:id/verify-upi', authenticate, authorize('super_admin', 'receptio
     try {
       const { awardPointsAfterPayment } = require('./loyalty');
       await awardPointsAfterPayment(client, parseInt(req.params.id), a.customer_id, netPayable, req.user.id);
+
+    } catch (_) {}
+    // Award first-visit cashback for UPI payments too
+    try {
+      await awardFirstVisitCashback(client, parseInt(req.params.id), a.customer_id, netPayable, req.user.id);
     } catch (_) {}
 
     await client.query('COMMIT');

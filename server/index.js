@@ -26,6 +26,7 @@ app.use('/api/appointments', require('./routes/appointments'));
 app.use('/api/analytics', require('./routes/analytics'));
 app.use('/api/membership', require('./routes/membership'));
 app.use('/api/loyalty', require('./routes/loyalty'));
+app.use('/api/cashback', require('./routes/cashback'));
 app.use('/api/public', require('./routes/public'));
 app.use('/api/payment', require('./routes/payment'));
 app.use('/api/offers', require('./routes/offers'));
