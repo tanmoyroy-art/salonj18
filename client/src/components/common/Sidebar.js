@@ -63,7 +63,7 @@ export default function Sidebar() {
       {/* Public booking link */}
       <div style={{ padding: '12px 16px', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
         <a
-          href="/book"
+          href="/appointment"
           target="_blank"
           rel="noreferrer"
           style={{
