@@ -281,6 +281,38 @@ async function redeemPoints(client, appointmentId, customerId, pointsToRedeem, p
   }
 }
 
+// Award points for a membership purchase, using the plan's own points_per_100 rate
+async function awardMembershipPoints(client, customerId, planId, amountPaid, performedBy) {
+  try {
+    const plan = await client.query('SELECT points_per_100 FROM membership_plans WHERE id=$1', [planId]);
+    const rate = parseFloat(plan.rows[0]?.points_per_100 || 0);
+    const pointsEarned = Math.floor((amountPaid / 100) * rate * 100) / 100;
+    if (pointsEarned <= 0) return 0;
+
+    await ensureWallet(client, customerId);
+
+    await client.query(
+      `UPDATE customer_points
+       SET total_points = total_points + $1, lifetime_points = lifetime_points + $1, updated_at = NOW()
+       WHERE customer_id = $2`,
+      [pointsEarned, customerId]
+    );
+
+    await client.query(
+      `INSERT INTO points_transactions (customer_id, transaction_type, points, amount_spent, description, performed_by)
+       VALUES ($1, 'earned', $2, $3, $4, $5)`,
+      [customerId, pointsEarned, amountPaid, 'Earned from membership purchase', performedBy]
+    );
+
+    return pointsEarned;
+  } catch (err) {
+    console.error('Membership points award error:', err.message);
+    return 0;
+  }
+}
+
+
 module.exports = router;
 module.exports.awardPointsAfterPayment = awardPointsAfterPayment;
 module.exports.redeemPoints = redeemPoints;
+module.exports.awardMembershipPoints = awardMembershipPoints;

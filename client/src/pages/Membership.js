@@ -208,74 +208,69 @@ function AssignModal({ plans, onClose, onSuccess }) {
   const [isNewCustomer, setIsNewCustomer] = useState(false);
   const [sameWhatsapp, setSameWhatsapp] = useState(true);
   const [customerForm, setCustomerForm] = useState({
-      name: '',
-      phone: '',
-      email: '',
-      whatsapp_number: '',
-      date_of_birth: '',
+    name: '', phone: '', email: '', whatsapp_number: '', date_of_birth: '',
   });
   const [plan, setPlan] = useState('');
   const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
+  const [paymentMethod, setPaymentMethod] = useState('upi');
   const [loading, setLoading] = useState(false);
+
+  // payment step state
+  const [step, setStep] = useState('form'); // 'form' | 'payment' | 'done'
+  const [pendingMembership, setPendingMembership] = useState(null);
+  const [upiData, setUpiData] = useState(null);
+  const [confirming, setConfirming] = useState(false);
+  const [pointsEarned, setPointsEarned] = useState(null);
 
   const lookup = async () => {
     try {
       const res = await api.get(`/customers/lookup/${phone}`);
-      if (res.data.exists) {
-          setCustomer(res.data.customer);
-          setIsNewCustomer(false);
-      }
+      if (res.data.exists) { setCustomer(res.data.customer); setIsNewCustomer(false); }
       else {
-          setCustomer(null);
-          setIsNewCustomer(true);
-
-          setCustomerForm({
-              name: '',
-              phone,
-              email: '',
-              whatsapp_number: '',
-              date_of_birth: '',
-          });
+        setCustomer(null); setIsNewCustomer(true);
+        setCustomerForm({ name: '', phone, email: '', whatsapp_number: '', date_of_birth: '' });
       }
     } catch (err) {
-        if (err.response?.status === 404) {
-            setCustomer(null);
-            setIsNewCustomer(true);
-            setCustomerForm({
-                name: '',
-                phone,
-                email: '',
-                whatsapp_number: '',
-                date_of_birth: '',
-            });
-            return;
-        }
-        alert(err.response?.data?.error || 'Lookup failed');
+      if (err.response?.status === 404) {
+        setCustomer(null); setIsNewCustomer(true);
+        setCustomerForm({ name: '', phone, email: '', whatsapp_number: '', date_of_birth: '' });
+        return;
+      }
+      alert(err.response?.data?.error || 'Lookup failed');
     }
   };
-  
+
   const handleAssign = async () => {
     if (!plan) return;
     setLoading(true);
     try {
-      // await api.post('/membership/assign', {
-      //   customer_id: customer.id,
-      //   plan_id: parseInt(plan),
-      //   start_date: startDate,
-      // });
-      const payload = { plan_id: Number(plan), start_date: startDate };
-      if(customer){
-          payload.customer_id = customer.id;
-      }else{
-          payload.customer = customerForm;
+      const payload = { plan_id: Number(plan), start_date: startDate, payment_method: paymentMethod };
+      if (customer) payload.customer_id = customer.id;
+      else payload.customer = customerForm;
+
+      const res = await api.post('/membership/assign', payload);
+      setPendingMembership(res.data.membership);
+
+      if (paymentMethod === 'upi') {
+        const upiRes = await api.get(`/membership/upi-string/${res.data.membership.id}`);
+        setUpiData(upiRes.data);
       }
-      console.log(payload);
-      const res = await api.post('/membership/assign',payload);
-      onSuccess();
-      onClose();
+      setStep('payment');
     } catch (err) {
       alert(err.response?.data?.error || 'Failed to assign');
     } finally { setLoading(false); }
+  };
+
+  const handleConfirmPayment = async () => {
+    setConfirming(true);
+    try {
+      const res = await api.post(`/membership/${pendingMembership.id}/confirm-payment`);
+      setPointsEarned(res.data.points_earned);
+      setStep('done');
+      onSuccess();
+    } catch (err) {
+      alert(err.response?.data?.error || 'Failed to confirm payment');
+    } finally { setConfirming(false); }
   };
 
   const selectedPlan = plans.find(p => p.id === parseInt(plan));
@@ -287,107 +282,165 @@ function AssignModal({ plans, onClose, onSuccess }) {
           <h3>🎫 Assign Membership</h3>
           <button className="btn-close" onClick={onClose}>×</button>
         </div>
-        <div className="modal-body">
-          <div className="form-group">
-            <label className="form-label">Customer Phone</label>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <input className="form-control" placeholder="Mobile number" value={phone}
-                onChange={(e) => {
-                  const value = e.target.value;
-                  setPhone(value);
 
-                  if (isNewCustomer) {
-                      setCustomerForm(prev => ({
-                          ...prev,
-                          phone: value,
-                          whatsapp_number: sameWhatsapp ? value : prev.whatsapp_number
-                      }));
-                  }
-              }}
-              onKeyDown={e => e.key === 'Enter' && lookup()} />
-              <button className="btn btn-primary btn-sm" onClick={lookup}>Find</button>
-            </div>
-            <div className="form-group">
-              <label>
-              <input type="checkbox" checked={sameWhatsapp}
-                  onChange={(e) => {
-                      const checked = e.target.checked;
-                      setSameWhatsapp(checked);
-                      setCustomerForm(prev => ({
-                          ...prev,
-                          whatsapp_number: checked ? prev.phone : ''
-                      }));
-                  }}
-              /> Same as Contact Number
-              </label>
-            </div>
-          </div>
-          {customer && (
-            <div className="alert alert-success">✅ {customer.name} ({customer.phone})</div>
-          )}
-          {isNewCustomer && (
-            <div className="card" style={{marginBottom:20}}>
-                <h4>Create New Customer</h4>
-                <div className="form-group">
-                    <label>Name</label>
-                    <input className="form-control" value={customerForm.name} onChange={(e)=> setCustomerForm({...customerForm, name:e.target.value})}/>
-                </div>
-                <div className="form-group">
-                    <label>Email</label>
-                    <input className="form-control" value={customerForm.email} onChange={(e)=> setCustomerForm({...customerForm, email:e.target.value})}/>
-                </div>
-                <div className="form-group">
-                  <label>WhatsApp Number</label>
-                  <input
-                      className="form-control"
-                      value={customerForm.whatsapp_number}
-                      disabled={sameWhatsapp}
-                      onChange={(e) =>
-                          setCustomerForm({
-                              ...customerForm,
-                              whatsapp_number: e.target.value
-                          })
+        {step === 'form' && (
+          <>
+            <div className="modal-body">
+              <div className="form-group">
+                <label className="form-label">Customer Phone</label>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <input className="form-control" placeholder="Mobile number" value={phone}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setPhone(value);
+                      if (isNewCustomer) {
+                        setCustomerForm(prev => ({ ...prev, phone: value, whatsapp_number: sameWhatsapp ? value : prev.whatsapp_number }));
                       }
-                  />
+                    }}
+                    onKeyDown={e => e.key === 'Enter' && lookup()} />
+                  <button className="btn btn-primary btn-sm" onClick={lookup}>Find</button>
                 </div>
                 <div className="form-group">
-                  <label>Date of Birth</label>
-                  <input type="date" className="form-control" value={customerForm.date_of_birth} onChange={(e)=> setCustomerForm({ ...customerForm, date_of_birth:e.target.value})}/>
+                  <label>
+                    <input type="checkbox" checked={sameWhatsapp}
+                      onChange={(e) => {
+                        const checked = e.target.checked;
+                        setSameWhatsapp(checked);
+                        setCustomerForm(prev => ({ ...prev, whatsapp_number: checked ? prev.phone : '' }));
+                      }}
+                    /> Same as Contact Number
+                  </label>
                 </div>
+              </div>
+
+              {customer && <div className="alert alert-success">✅ {customer.name} ({customer.phone})</div>}
+
+              {isNewCustomer && (
+                <div className="card" style={{ marginBottom: 20 }}>
+                  <h4>Create New Customer</h4>
+                  <div className="form-group">
+                    <label>Name</label>
+                    <input className="form-control" value={customerForm.name} onChange={(e) => setCustomerForm({ ...customerForm, name: e.target.value })} />
+                  </div>
+                  <div className="form-group">
+                    <label>Email</label>
+                    <input className="form-control" value={customerForm.email} onChange={(e) => setCustomerForm({ ...customerForm, email: e.target.value })} />
+                  </div>
+                  <div className="form-group">
+                    <label>WhatsApp Number</label>
+                    <input className="form-control" value={customerForm.whatsapp_number} disabled={sameWhatsapp}
+                      onChange={(e) => setCustomerForm({ ...customerForm, whatsapp_number: e.target.value })} />
+                  </div>
+                  <div className="form-group">
+                    <label>Date of Birth</label>
+                    <input type="date" className="form-control" value={customerForm.date_of_birth} onChange={(e) => setCustomerForm({ ...customerForm, date_of_birth: e.target.value })} />
+                  </div>
+                </div>
+              )}
+
+              <div className="form-group">
+                <label className="form-label">Membership Plan</label>
+                <select className="form-control" value={plan} onChange={e => setPlan(e.target.value)}>
+                  <option value="">Select plan</option>
+                  {plans.map(p => (
+                    <option key={p.id} value={p.id}>
+                      {TIER_STYLE[p.tier]?.icon} {p.name} — {p.discount_percent}% off · ₹{parseFloat(p.price).toLocaleString('en-IN')}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {selectedPlan && (
+                <div style={{ background: '#F5F3FF', borderRadius: 8, padding: 12, fontSize: 13, marginBottom: 16 }}>
+                  <strong>{selectedPlan.name}</strong>: {selectedPlan.discount_percent}% discount for {selectedPlan.duration_days} days · ₹{parseFloat(selectedPlan.price).toLocaleString('en-IN')}
+                  {selectedPlan.points_per_100 > 0 && (
+                    <div style={{ marginTop: 4, color: '#8B5CF6' }}>
+                      ⭐ Earns ~{Math.floor((parseFloat(selectedPlan.price) / 100) * selectedPlan.points_per_100)} loyalty points on payment
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div className="form-group">
+                <label className="form-label">Start Date</label>
+                <input type="date" className="form-control" value={startDate} onChange={e => setStartDate(e.target.value)} />
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">Payment Method</label>
+                <select className="form-control" value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)}>
+                  <option value="upi">UPI (QR code)</option>
+                  <option value="cash">Cash</option>
+                  <option value="card">Card</option>
+                </select>
+              </div>
             </div>
-          )}
-          <div className="form-group">
-            <label className="form-label">Membership Plan</label>
-            <select className="form-control" value={plan} onChange={e => setPlan(e.target.value)}>
-              <option value="">Select plan</option>
-              {plans.map(p => (
-                <option key={p.id} value={p.id}>
-                  {TIER_STYLE[p.tier]?.icon} {p.name} — {p.discount_percent}% off · ₹{parseFloat(p.price).toLocaleString('en-IN')}
-                </option>
-              ))}
-            </select>
-          </div>
-          {selectedPlan && (
-            <div style={{ background: '#F5F3FF', borderRadius: 8, padding: 12, fontSize: 13, marginBottom: 16 }}>
-              <strong>{selectedPlan.name}</strong>: {selectedPlan.discount_percent}% discount for {selectedPlan.duration_days} days · ₹{parseFloat(selectedPlan.price).toLocaleString('en-IN')}
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
+              <button className="btn btn-primary" onClick={handleAssign} disabled={!plan || loading}>
+                {loading ? 'Processing…' : 'Continue to Payment →'}
+              </button>
             </div>
-          )}
-          <div className="form-group">
-            <label className="form-label">Start Date</label>
-            <input type="date" className="form-control" value={startDate} onChange={e => setStartDate(e.target.value)} />
-          </div>
-        </div>
-        <div className="modal-footer">
-          <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={handleAssign} >
-            {loading ? 'Assigning…' : '✅ Assign Membership'}
-          </button>
-        </div>
+          </>
+        )}
+
+        {step === 'payment' && (
+          <>
+            <div className="modal-body" style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: 15, marginBottom: 12 }}>
+                Amount Due: <strong>₹{parseFloat(pendingMembership.amount_paid).toLocaleString('en-IN')}</strong>
+              </div>
+
+              {paymentMethod === 'upi' && upiData && (
+                <div style={{ marginBottom: 16 }}>
+                  <img
+                    alt="UPI QR"
+                    src={`https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(upiData.upi_string)}`}
+                    style={{ borderRadius: 12, border: '1px solid #E5E7EB' }}
+                  />
+                  <div style={{ fontSize: 12, color: '#6B7280', marginTop: 8 }}>
+                    Scan to pay {upiData.upi_name} ({upiData.upi_id})
+                  </div>
+                </div>
+              )}
+
+              {paymentMethod !== 'upi' && (
+                <div style={{ background: '#F9FAFB', borderRadius: 10, padding: 16, marginBottom: 16, fontSize: 13, color: '#6B7280' }}>
+                  Collect payment via {paymentMethod}, then confirm below.
+                </div>
+              )}
+
+              <div style={{ background: '#FFFBEB', border: '1px solid #FCD34D', borderRadius: 10, padding: 10, fontSize: 12, color: '#92400E' }}>
+                ⚠️ Membership stays inactive and no loyalty points are added until payment is confirmed.
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={() => setStep('form')}>← Back</button>
+              <button className="btn btn-primary" onClick={handleConfirmPayment} disabled={confirming}>
+                {confirming ? 'Confirming…' : '✅ Confirm Payment Received'}
+              </button>
+            </div>
+          </>
+        )}
+
+        {step === 'done' && (
+          <>
+            <div className="modal-body" style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: 40, marginBottom: 8 }}>🎉</div>
+              <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 4 }}>Membership Activated</div>
+              {pointsEarned > 0 && (
+                <div style={{ color: '#8B5CF6', fontWeight: 600 }}>+{pointsEarned} loyalty points credited</div>
+              )}
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-primary" onClick={onClose}>Done</button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
 }
-
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function Membership() {
   const [tab, setTab] = useState('plans');
