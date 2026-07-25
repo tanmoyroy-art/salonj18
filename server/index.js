@@ -30,6 +30,7 @@ app.use('/api/cashback', require('./routes/cashback'));
 app.use('/api/public', require('./routes/public'));
 app.use('/api/payment', require('./routes/payment'));
 app.use('/api/offers', require('./routes/offers'));
+app.use('/api/page-view', require('./routes/pageview'));
 
 // Health check
 app.get('/api/health', (req, res) => {
