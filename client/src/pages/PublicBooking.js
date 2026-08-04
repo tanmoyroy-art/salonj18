@@ -3,6 +3,7 @@ import { useLocation } from 'react-router-dom';
 import axios from 'axios';
 import logo from '../assets/logo2.png'
 import toast from 'react-hot-toast';
+import ReviewQRCodeModal from '../components/ReviewQRCodeModal';
 
 const api = axios.create({ baseURL: '/api/public' });
 const MEDIA_URL = (fn) => `/api/services/media/file/${fn}`;
@@ -208,6 +209,7 @@ export default function PublicBooking() {
   const [utrNumber, setUtrNumber]       = useState('');
   const [submittingUtr, setSubmittingUtr] = useState(false);
   const isMobile = /Mobi|Android/i.test(navigator.userAgent);
+  const [open, setOpen] = useState(false);
 
   // Load Razorpay SDK
   useEffect(() => {
@@ -508,6 +510,7 @@ const validate = () => {
   );
 
   return (
+    <>
     <div style={{ minHeight:'100vh', background:BG, paddingBottom:60 }}>
       {/* Header */}
       <div style={{ padding:'24px 24px 0', maxWidth:680, margin:'0 auto' }}>
@@ -521,6 +524,43 @@ const validate = () => {
             </div>
             <div style={{ color:'#A78BFA', fontSize:11, letterSpacing:2, textTransform:'uppercase' }}>Book an Appointment</div>
           </div>
+          <button
+  onClick={() => setOpen(true)}
+  style={{
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: "10px",
+    padding: "10px 26px",
+    background: "linear-gradient(135deg, #FCE7F3, #FBCFE8)",
+    color: "#BE185D",
+    border: "1px solid #F9A8D4",
+    borderRadius: "14px",
+    fontSize: "16px",
+    fontWeight: "700",
+    cursor: "pointer",
+    boxShadow: "0 8px 20px rgba(244,114,182,0.18)",
+    transition: "all 0.3s ease",
+    letterSpacing: "0.3px",
+  }}
+  onMouseEnter={(e) => {
+    e.currentTarget.style.background =
+      "linear-gradient(135deg, #FBCFE8, #F9A8D4)";
+    e.currentTarget.style.transform = "translateY(-2px)";
+    e.currentTarget.style.boxShadow =
+      "0 12px 25px rgba(244,114,182,0.28)";
+  }}
+  onMouseLeave={(e) => {
+    e.currentTarget.style.background =
+      "linear-gradient(135deg, #FCE7F3, #FBCFE8)";
+    e.currentTarget.style.transform = "translateY(0)";
+    e.currentTarget.style.boxShadow =
+      "0 8px 20px rgba(244,114,182,0.18)";
+  }}
+>
+  <span style={{ fontSize: "20px" }}>⭐</span>
+  <span>Leave a Review</span>
+</button>
         </div>
       </div>
 
@@ -958,7 +998,14 @@ const validate = () => {
 
       {/* Service detail popup */}
       {popupService && <ServicePopup service={popupService} onClose={()=>setPopupService(null)} />}
-    </div>
+       
+    
+      <ReviewQRCodeModal
+        open={open}
+        onClose={() => setOpen(false)}
+      />
+      </div>
+      </>
   );
 }
 
