@@ -62,15 +62,20 @@ async function sendPageView(req){
         ]
     };
 
-    await axios.post(
-        `https://graph.facebook.com/v23.0/${PIXEL_ID}/events`,
-        body,
-        {
-            params: {
-                access_token: ACCESS_TOKEN
+    try {
+        await axios.post(
+            `https://graph.facebook.com/v23.0/${PIXEL_ID}/events`,
+            body,
+            {
+                params: {
+                    access_token: ACCESS_TOKEN
+                }
             }
-        }
-    );
+        );
+    } catch (err) {
+        console.log(err.response?.data);
+        throw err;
+    }
 }
 
 module.exports = {
