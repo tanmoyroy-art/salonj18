@@ -211,6 +211,11 @@ export default function PublicBooking() {
   const isMobile = /Mobi|Android/i.test(navigator.userAgent);
   const [open, setOpen] = useState(false);
 
+  // Membership integration
+  const [membershipPlans, setMembershipPlans] = useState([]);
+  const [selectedMembershipPlan, setSelectedMembershipPlan] = useState(null);
+  const [loadingPlans, setLoadingPlans] = useState(false);
+
   // Load Razorpay SDK
   useEffect(() => {
     if (window.Razorpay) { setRazorpayLoaded(true); return; }
@@ -237,6 +242,12 @@ export default function PublicBooking() {
         const b = await api.get('/blackout-dates');
         setBlackoutDates((b.data || []).map(d => d.date));
       } catch (e) { console.error('Blackout dates load error:', e.message); setBlackoutDates([]); }
+
+      // Load membership plans
+      try {
+        const mp = await api.get('/membership-plans');
+        setMembershipPlans(mp.data || []);
+      } catch (e) { console.error('Membership plans load error:', e.message); setMembershipPlans([]); }
 
       setLoadingData(false);
     };
@@ -266,7 +277,7 @@ export default function PublicBooking() {
 
   // Phone lookup
   useEffect(() => {
-    if (phone.length !== 10) { setCustomer(null); return; }
+    if (phone.length !== 10) { setCustomer(null); setSelectedMembershipPlan(null); return; }
     const t = setTimeout(async () => {
       setPhoneLooking(true);
       try {
@@ -276,12 +287,26 @@ export default function PublicBooking() {
           setCustomer(c);
           setName(c.name||''); setEmail(c.email||'');
           setDob(c.date_of_birth ? c.date_of_birth.split('T')[0] : '');
-        } else setCustomer(null);
-      } catch { setCustomer(null); }
+          
+          // Auto-select membership if existing member has active membership
+          if (c.membership_id && c.membership_name) {
+            const membershipPlan = membershipPlans.find(mp => mp.tier === c.tier);
+            setSelectedMembershipPlan(membershipPlan || null);
+          } else {
+            setSelectedMembershipPlan(null);
+          }
+        } else {
+          setCustomer(null);
+          setSelectedMembershipPlan(null);
+        }
+      } catch { 
+        setCustomer(null);
+        setSelectedMembershipPlan(null);
+      }
       finally { setPhoneLooking(false); }
     }, 500);
     return () => clearTimeout(t);
-  }, [phone]);
+  }, [phone, membershipPlans]);
 
   // Check active offer when date or services change
   useEffect(() => {
@@ -310,10 +335,27 @@ export default function PublicBooking() {
   // Offer beats membership — one discount at a time
   const offerActive = activeOffer && activeOffer.service_ids?.some(id => selectedServices.includes(id));
   const offerDiscountAmt = offerActive ? (subtotal * parseFloat(activeOffer.discount_percent||0)) / 100 : 0;
-  const hasMembership = customer?.membership_name && !isBlackout && !offerActive;
-  const discountPct = hasMembership ? parseFloat(customer.discount_percent||0) : 0;
-  const discountAmt = (subtotal * discountPct) / 100;
-  const payable = subtotal - offerDiscountAmt - discountAmt;
+  
+  // Membership discount: existing members get auto discount, new customers only if they select a plan
+  let membershipDiscountPct = 0;
+  let hasMembershipDiscount = false;
+  
+  if (!offerActive && !isBlackout) {
+    if (customer?.membership_id && customer?.membership_name) {
+      // Existing member — auto apply
+      membershipDiscountPct = parseFloat(customer.discount_percent||0);
+      hasMembershipDiscount = true;
+    } else if (selectedMembershipPlan && !customer?.membership_id) {
+      // New customer selecting a membership plan
+      membershipDiscountPct = parseFloat(selectedMembershipPlan.discount_percent||0);
+      hasMembershipDiscount = true;
+    }
+  }
+  
+  const membershipDiscountAmt = (subtotal * membershipDiscountPct) / 100;
+  const membershipCost = (selectedMembershipPlan && !customer?.membership_id) ? parseFloat(selectedMembershipPlan.price||0) : 0;
+  
+  const payable = subtotal - offerDiscountAmt - membershipDiscountAmt + membershipCost;
 
   const toggleService = useCallback((id) => {
     setSelectedServices(prev => prev.includes(id) ? prev.filter(x=>x!==id) : [...prev,id]);
@@ -391,6 +433,7 @@ const validate = () => {
       appointment_date: `${date}T${time}:00`,
       notes,
       apply_membership: true,
+      membership_plan_id: selectedMembershipPlan?.id || null, // For new customers buying membership
     });
     return res.data;
   };
@@ -628,8 +671,105 @@ const validate = () => {
                   />
                 </div>
               </Section>
+              {/* Membership Plans — MOVED BEFORE SERVICES — show in one line */}
+              {!customer?.membership_id && (
+                <Section label="6. Membership Plans (Optional)">
+                  <div style={{ display:'flex', gap:10, overflowX:'auto', paddingBottom:8, scrollbarWidth:'thin', scrollbarColor:'#C4B5FD transparent' }}>
+                    {/* No membership option */}
+                    <div
+                      onClick={() => setSelectedMembershipPlan(null)}
+                      style={{
+                        border: `2px solid ${selectedMembershipPlan === null ? '#8B5CF6' : '#E5E7EB'}`,
+                        borderRadius: 12,
+                        padding: 12,
+                        background: selectedMembershipPlan === null ? '#F5F3FF' : 'white',
+                        cursor: 'pointer',
+                        textAlign: 'center',
+                        transition: 'all 0.2s',
+                        flexShrink: 0,
+                        minWidth: 130,
+                        boxShadow: selectedMembershipPlan === null ? '0 0 0 3px #EDE9FE' : '0 1px 3px rgba(0,0,0,0.06)',
+                      }}>
+                      <div style={{ fontSize: 24, marginBottom: 4 }}>❌</div>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: '#374151' }}>No Membership</div>
+                    </div>
+
+                    {/* Membership plans */}
+                    {membershipPlans.map(plan => (
+                      <div
+                        key={plan.id}
+                        onClick={() => setSelectedMembershipPlan(plan)}
+                        style={{
+                          border: `2px solid ${selectedMembershipPlan?.id === plan.id ? '#8B5CF6' : '#E5E7EB'}`,
+                          borderRadius: 12,
+                          padding: 12,
+                          background: selectedMembershipPlan?.id === plan.id ? '#F5F3FF' : 'white',
+                          cursor: 'pointer',
+                          transition: 'all 0.2s',
+                          flexShrink: 0,
+                          minWidth: 130,
+                          boxShadow: selectedMembershipPlan?.id === plan.id ? '0 0 0 3px #EDE9FE' : '0 1px 3px rgba(0,0,0,0.06)',
+                        }}>
+                        <div style={{ fontSize: 18, marginBottom: 3 }}>{TIER_STYLE[plan.tier]?.icon}</div>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: '#374151', marginBottom: 2 }}>
+                          {plan.name}
+                        </div>
+                        <div style={{
+                          fontSize: 12,
+                          fontWeight: 800,
+                          color: TIER_STYLE[plan.tier]?.color,
+                          marginBottom: 4
+                        }}>
+                          ₹{parseFloat(plan.price).toLocaleString('en-IN')}
+                        </div>
+                        <div style={{
+                          fontSize: 10,
+                          background: TIER_STYLE[plan.tier]?.bg,
+                          color: TIER_STYLE[plan.tier]?.color,
+                          padding: '3px 6px',
+                          borderRadius: 4,
+                          fontWeight: 600
+                        }}>
+                          {plan.discount_percent}% off
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </Section>
+              )}
+
+              {/* Show existing member's membership tier */}
+              {customer?.membership_id && customer?.membership_name && (
+                <Section label="6. Your Membership">
+                  <div style={{
+                    background: TIER_STYLE[customer.tier]?.bg,
+                    border: `2px solid ${TIER_STYLE[customer.tier]?.color}`,
+                    borderRadius: 12,
+                    padding: 12,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 10
+                  }}>
+                    <span style={{ fontSize: 24 }}>{TIER_STYLE[customer.tier]?.icon}</span>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: '#374151' }}>
+                        {customer.membership_name} Member
+                      </div>
+                      <div style={{
+                        fontSize: 10,
+                        color: TIER_STYLE[customer.tier]?.color,
+                        fontWeight: 700,
+                        marginTop: 2
+                      }}>
+                        {customer.discount_percent}% discount on all services
+                      </div>
+                    </div>
+                  </div>
+                </Section>
+              )}
+
               {/* 5. Services — Category tabs + search + card grid */}
-              <Section label="6. Select Services" error={errors.services}>
+              <Section label="7. Select Services" error={errors.services}>
 
                 {/* Search bar */}
                 <div style={{ position:'relative', marginBottom:10 }}>
@@ -686,6 +826,15 @@ const validate = () => {
                   {filteredServices.map(svc => {
                     const sel = selectedServices.includes(svc.id);
                     const firstImg = svc.media?.find(m=>m.file_type==='image') || svc.media?.[0];
+                    
+                    // Calculate discounted price if membership selected or existing member
+                    const hasDiscount = (selectedMembershipPlan || (customer?.membership_id && customer?.membership_name));
+                    const discountPct = hasDiscount ? (selectedMembershipPlan ? 
+                      parseFloat(selectedMembershipPlan.discount_percent||0) : 
+                      parseFloat(customer.discount_percent||0)) : 0;
+                    const originalPrice = parseFloat(svc.price);
+                    const discountedPrice = originalPrice - (originalPrice * discountPct / 100);
+                    
                     return (
                       <div key={svc.id}
                         style={{
@@ -724,11 +873,22 @@ const validate = () => {
                           {svc.category_name && (
                             <div style={{ fontSize:10, color:'#8B5CF6', fontWeight:600, marginBottom:4, textTransform:'uppercase', letterSpacing:0.5 }}>{svc.category_name}</div>
                           )}
-                          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-                            <span style={{ fontSize:11, color:'#6B7280' }}>⏱ {svc.duration_minutes}min</span>
-                            <span style={{ fontWeight:800, fontSize:14, color: sel?'#8B5CF6':'#374151' }}>
-                              ₹{parseFloat(svc.price).toLocaleString('en-IN')}
-                            </span>
+                          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', flexDirection: 'column', gap: 4 }}>
+                            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', width: '100%' }}>
+                              <span style={{ fontSize:11, color:'#6B7280' }}>⏱ {svc.duration_minutes}min</span>
+                              {/* Original price */}
+                              <span style={{ fontWeight:800, fontSize:14, color: sel?'#8B5CF6':'#374151', textDecoration: hasDiscount ? 'line-through' : 'none', opacity: hasDiscount ? 0.6 : 1 }}>
+                                ₹{originalPrice.toLocaleString('en-IN')}
+                              </span>
+                            </div>
+                            {/* Discounted price in light green */}
+                            {hasDiscount && (
+                              <div style={{ width: '100%', background: '#F0FDF4', border: '1px solid #86EFAC', borderRadius: 6, padding: '4px 8px', textAlign: 'right' }}>
+                                <span style={{ fontWeight:800, fontSize:13, color: '#059669' }}>
+                                  ₹{discountedPrice.toLocaleString('en-IN')}
+                                </span>
+                              </div>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -751,23 +911,63 @@ const validate = () => {
                 <div style={{ marginTop:6, fontSize:11, color:'#9CA3AF' }}>💡 Tap image to see full details · Tap card to select</div>
               </Section>
 
-              {/* 6. Date */}
-              <Section label="7. Date of Appointment" error={errors.date}>
+              {/* 8. Date */}
+              <Section label="8. Date of Appointment" error={errors.date}>
                 <input style={inp(errors.date||isBlackout)} type="date" min={today} value={date}
                   onChange={e=>{ setDate(e.target.value); setErrors(x=>({...x,date:null})); }} />
                 {isBlackout && <div style={{ marginTop:6, fontSize:12, color:'#DC2626', background:'#FEF2F2', padding:'6px 12px', borderRadius:8 }}>🚫 Blackout day — membership discount not available</div>}
               </Section>
 
-              {/* 7. Specialist */}
-              <Section label="8. Preferred Specialist">
+              {/* Show existing member's membership tier */}
+              {customer?.membership_id && customer?.membership_name && (
+                <Section label="7. Your Membership" style={{display: 'none'}}>
+                  <div style={{
+                    background: TIER_STYLE[customer.tier]?.bg,
+                    border: `2px solid ${TIER_STYLE[customer.tier]?.color}`,
+                    borderRadius: 12,
+                    padding: 14,
+                    display: 'none',
+                    alignItems: 'center',
+                    gap: 12
+                  }}>
+                    <span style={{ fontSize: 28 }}>{TIER_STYLE[customer.tier]?.icon}</span>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: '#374151' }}>
+                        {customer.membership_name} Member
+                      </div>
+                      <div style={{
+                        fontSize: 11,
+                        color: TIER_STYLE[customer.tier]?.color,
+                        fontWeight: 700,
+                        marginTop: 2
+                      }}>
+                        {customer.discount_percent}% discount on all services
+                      </div>
+                      <div style={{ fontSize: 10, color: '#9CA3AF', marginTop: 3 }}>
+                        Valid until: {new Date(customer.membership_end).toLocaleDateString('en-IN')}
+                      </div>
+                    </div>
+                  </div>
+                </Section>
+              )}
+
+              {/* 8. Date */}
+              <Section label="8. Date of Appointment" error={errors.date}  style={{display: 'none'}}>
+                <input style={inp(errors.date||isBlackout)} type="date" min={today} value={date}
+                  onChange={e=>{ setDate(e.target.value); setErrors(x=>({...x,date:null})); }} />
+                {isBlackout && <div style={{ marginTop:6, fontSize:12, color:'#DC2626', background:'#FEF2F2', padding:'6px 12px', borderRadius:8 }}>🚫 Blackout day — membership discount not available</div>}
+              </Section>
+
+              {/* Specialist */}
+              <Section label="9. Preferred Specialist">
                 <select style={inp()} value={specialistId} onChange={e=>setSpecialistId(e.target.value)}>
                   <option value="">Any Available Specialist</option>
                   {specialists.map(s=><option key={s.id} value={s.id}>{s.name}{s.specialization?` — ${s.specialization}`:''}</option>)}
                 </select>
               </Section>
 
-              {/* 8. Time */}
-              <Section label={`9. Select Time${totalDuration>0?` (session: ${totalDuration} min)`:''}`} error={errors.time}>
+              {/* Time */}
+              <Section label={`10. Select Time${totalDuration>0?` (session: ${totalDuration} min)`:''}`} error={errors.time}>
                 {!date ? <div style={hint}>Select a date first</div>
                 : !selectedServices.length ? <div style={hint}>Select services first to see available times</div>
                 : loadingSlots ? <div style={hint}>Loading available times…</div>
@@ -798,7 +998,7 @@ const validate = () => {
               </Section>
 
               {/* 9. Notes */}
-              <Section label="10. Special Requests (Optional)">
+              <Section label="11. Special Requests (Optional)">
                 <textarea style={{ ...inp(), minHeight:80, resize:'vertical' }} placeholder="Allergies, preferences, special instructions…" value={notes} onChange={e=>setNotes(e.target.value)} />
               </Section>
 
@@ -828,15 +1028,21 @@ const validate = () => {
                       ⚠️ Festival offer active — membership discount paused for this visit
                     </div>
                   )}
-                  {hasMembership && !offerActive && (
+                  {hasMembershipDiscount && !offerActive && (
                     <div style={{ display:'flex', justifyContent:'space-between', fontSize:14, color:'#059669', fontWeight:600, marginBottom:6, background:'#ECFDF5', padding:'6px 10px', borderRadius:8 }}>
-                      <span>{TIER_STYLE[customer.tier]?.icon} {customer.membership_name} ({discountPct}%)</span>
-                      <span>−₹{discountAmt.toFixed(2)}</span>
+                      <span>{customer?.membership_id ? `${TIER_STYLE[customer.tier]?.icon} ${customer.membership_name}` : `${TIER_STYLE[selectedMembershipPlan?.tier]?.icon} ${selectedMembershipPlan?.name}`} ({membershipDiscountPct}%)</span>
+                      <span>−₹{membershipDiscountAmt.toFixed(2)}</span>
                     </div>
                   )}
                   {isBlackout && customer?.membership_name && !offerActive && (
                     <div style={{ fontSize:12, color:'#DC2626', marginBottom:6 }}>
                       🚫 Blackout day — membership discount not applicable
+                    </div>
+                  )}
+                  {membershipCost > 0 && (
+                    <div style={{ display:'flex', justifyContent:'space-between', fontSize:14, color:'#7C3AED', fontWeight:600, marginBottom:6, background:'#EDE9FE', padding:'6px 10px', borderRadius:8 }}>
+                      <span>✨ {selectedMembershipPlan?.name} Membership ({selectedMembershipPlan?.duration_days} days)</span>
+                      <span>+₹{membershipCost.toFixed(2)}</span>
                     </div>
                   )}
                   <div style={{ borderTop:'2px solid #8B5CF6', paddingTop:12, marginTop:6, display:'flex', justifyContent:'space-between', alignItems:'center' }}>

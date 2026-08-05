@@ -55,7 +55,8 @@ router.get('/specialists', async (req, res) => {
 router.get('/membership-plans', async (req, res) => {
   try {
     const result = await pool.query(
-      'SELECT * FROM membership_plans WHERE is_active=true ORDER BY price ASC'
+      `SELECT id, name, tier, discount_percent, price, duration_days, color, benefits, points_per_100
+       FROM membership_plans WHERE is_active=true ORDER BY price ASC`
     );
     res.json(result.rows);
   } catch (err) { res.status(500).json({ error: err.message }); }
@@ -92,12 +93,13 @@ router.get('/customer-lookup/:phone', async (req, res) => {
       LEFT JOIN membership_plans mp ON cm.plan_id = mp.id
       LEFT JOIN customer_points cp ON c.id = cp.customer_id
       WHERE c.phone = $1
+      LIMIT 1
     `, [req.params.phone]);
 
     if (!result.rows.length) return res.status(404).json({ exists: false });
     res.json({ exists: true, customer: result.rows[0] });
   } catch (err) {
-    // Fallback without points if tables missing
+    // Fallback without membership if tables missing
     try {
       const r2 = await pool.query('SELECT * FROM customers WHERE phone=$1', [req.params.phone]);
       if (!r2.rows.length) return res.status(404).json({ exists: false });
@@ -149,7 +151,7 @@ router.post('/book', async (req, res) => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    const { customer, services, specialist_id, appointment_date, notes, apply_membership } = req.body;
+    const { customer, services, specialist_id, appointment_date, notes, apply_membership, membership_plan_id } = req.body;
 
     // Upsert customer
     let customerId;
@@ -184,6 +186,9 @@ router.post('/book', async (req, res) => {
     let membershipId = null;
     let offerDiscount = 0;
     let offerId = null;
+    let membershipPurchaseId = null;
+    let membershipCost = 0;
+    
     const checkDate = appointment_date.split('T')[0];
     const serviceIds = serviceDetails.map(s => s.id);
 
@@ -210,20 +215,47 @@ router.post('/book', async (req, res) => {
           'SELECT id FROM membership_blackout_dates WHERE date=$1', [checkDate]
         );
         if (!blackout.rows.length) {
+          // Check if customer already has active membership
           const mem = await client.query(`
             SELECT cm.*, mp.discount_percent FROM customer_memberships cm
             JOIN membership_plans mp ON cm.plan_id = mp.id
             WHERE cm.customer_id=$1 AND cm.status='active' AND cm.end_date >= $2 LIMIT 1
           `, [customerId, checkDate]);
           if (mem.rows.length) {
+            // Existing member — apply discount
             membershipDiscount = (totalAmount * mem.rows[0].discount_percent) / 100;
             membershipId = mem.rows[0].id;
+          } else if (membership_plan_id) {
+            // New customer buying membership — add to cost, apply discount
+            const plan = await client.query('SELECT * FROM membership_plans WHERE id=$1', [membership_plan_id]);
+            if (plan.rows.length) {
+              membershipCost = parseFloat(plan.rows[0].price);
+              membershipDiscount = (totalAmount * plan.rows[0].discount_percent) / 100;
+              
+              // Create PENDING membership for new customer
+              const startDate = new Date();
+              const endDate = new Date(startDate);
+              endDate.setDate(endDate.getDate() + plan.rows[0].duration_days);
+              
+              const memRes = await client.query(`
+                INSERT INTO customer_memberships
+                  (customer_id, plan_id, start_date, end_date, amount_paid, status, payment_status)
+                VALUES ($1, $2, $3, $4, $5, 'pending', 'pending')
+                RETURNING id
+              `, [customerId, membership_plan_id, 
+                  startDate.toISOString().split('T')[0], 
+                  endDate.toISOString().split('T')[0], 
+                  membershipCost]);
+              
+              membershipPurchaseId = memRes.rows[0].id;
+            }
           }
         }
       } catch (_) {}
     }
 
     const totalDiscount = offerDiscount + membershipDiscount;
+    const payable = totalAmount - totalDiscount + membershipCost;
 
     // Create appointment
     const appt = await client.query(
@@ -249,9 +281,11 @@ router.post('/book', async (req, res) => {
       appointment_id: appt.rows[0].id,
       total: totalAmount,
       membership_discount: membershipDiscount,
+      membership_purchase_id: membershipPurchaseId,
+      membership_cost: membershipCost,
       offer_discount: offerDiscount,
       offer_id: offerId,
-      payable: totalAmount - totalDiscount,
+      payable: payable,
       message: 'Appointment booked successfully!'
     });
   } catch (err) {
