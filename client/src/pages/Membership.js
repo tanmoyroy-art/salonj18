@@ -446,6 +446,7 @@ export default function Membership() {
   const [tab, setTab] = useState('plans');
   const [plans, setPlans] = useState([]);
   const [memberships, setMemberships] = useState([]);
+  const [pendingMemberships, setPendingMemberships] = useState([]);
   const [blackouts, setBlackouts] = useState([]);
   const [showAssign, setShowAssign] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -454,14 +455,16 @@ export default function Membership() {
 
   const load = useCallback(async () => {
     try {
-      const [p, m, b] = await Promise.all([
+      const [p, m, b, pending] = await Promise.all([
         api.get('/membership/plans'),
         api.get('/membership/all'),
         api.get('/membership/blackout'),
+        api.get('/membership/pending'),
       ]);
       setPlans(p.data);
       setMemberships(m.data);
       setBlackouts(b.data);
+      setPendingMemberships(pending.data);
     } catch (err) { console.error(err); }
     finally { setLoading(false); }
   }, []);
@@ -498,6 +501,17 @@ export default function Membership() {
     load();
   };
 
+  const confirmPendingMembership = async (id) => {
+    if (!window.confirm('Activate this pending membership?')) return;
+    try {
+      await api.post(`/membership/${id}/confirm-payment`);
+      alert('✅ Membership activated successfully!');
+      load();
+    } catch (err) {
+      alert(err.response?.data?.error || 'Failed to activate membership');
+    }
+  };
+
   if (loading) return <div className="spinner" />;
 
   const activeMemberships = memberships.filter(m => m.status === 'active');
@@ -521,6 +535,13 @@ export default function Membership() {
             <div className="label">Active Members</div>
           </div>
         </div>
+        <div className="stat-card">
+          <div className="stat-icon" style={{ background: '#FFFBEB' }}>⏳</div>
+          <div className="stat-info">
+            <div className="value">{pendingMemberships.length}</div>
+            <div className="label">Pending Activation</div>
+          </div>
+        </div>
         {plans.map(p => (
           <div className="stat-card" key={p.id}>
             <div className="stat-icon" style={{ background: '#FEF3C7', fontSize: 22 }}>{TIER_STYLE[p.tier]?.icon}</div>
@@ -542,6 +563,7 @@ export default function Membership() {
       <div className="tabs">
         {[
           { key: 'plans', label: '📋 Plans' },
+          { key: 'pending', label: '⏳ Pending Activation' },
           { key: 'members', label: '👥 Active Members' },
           { key: 'blackout', label: '🚫 Blackout Calendar' },
           { key: 'history', label: '📜 All History' },
@@ -556,6 +578,70 @@ export default function Membership() {
       {tab === 'plans' && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
           {plans.map(plan => <PlanCard key={plan.id} plan={plan} onSave={load} />)}
+        </div>
+      )}
+
+      {/* Pending Activation Tab */}
+      {tab === 'pending' && (
+        <div className="card">
+          <div className="table-wrapper">
+            <table>
+              <thead>
+                <tr>
+                  <th>Customer</th>
+                  <th>Plan</th>
+                  <th>Discount</th>
+                  <th>Amount</th>
+                  <th>Payment Method</th>
+                  <th>Created</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pendingMemberships.map(m => {
+                  const ts = TIER_STYLE[m.tier] || TIER_STYLE.basic;
+                  return (
+                    <tr key={m.id} style={{ backgroundColor: '#FFFBEB' }}>
+                      <td>
+                        <div style={{ fontWeight: 500 }}>{m.customer_name}</div>
+                        <div style={{ fontSize: 12, color: '#9CA3AF' }}>{m.customer_phone}</div>
+                      </td>
+                      <td>
+                        <span style={{ fontSize: 16 }}>{ts.icon}</span>{' '}
+                        <span className={`badge ${ts.badge}`}>{m.plan_name}</span>
+                      </td>
+                      <td style={{ fontWeight: 700, color: '#8B5CF6' }}>{m.discount_percent}%</td>
+                      <td>₹{parseFloat(m.amount_paid || 0).toLocaleString('en-IN')}</td>
+                      <td>
+                        <span className="badge" style={{ background: m.payment_method === 'upi' ? '#F0FDF4' : m.payment_method === 'cash' ? '#FEF3C7' : '#EDE9FE', color: m.payment_method === 'upi' ? '#059669' : m.payment_method === 'cash' ? '#92400E' : '#5B21B6' }}>
+                          {m.payment_method === 'upi' ? '📱 UPI' : m.payment_method === 'cash' ? '💵 Cash' : '💳 Card'}
+                        </span>
+                      </td>
+                      <td style={{ fontSize: 12, color: '#9CA3AF' }}>
+                        {new Date(m.created_at).toLocaleDateString('en-IN')}
+                      </td>
+                      <td>
+                        <span className="badge" style={{ background: '#FFFBEB', color: '#B45309' }}>⏳ {m.status}</span>
+                      </td>
+                      <td>
+                        <button 
+                          className="btn btn-success btn-sm" 
+                          onClick={() => confirmPendingMembership(m.id)}
+                          style={{ background: '#059669', border: 'none' }}
+                        >
+                          ✅ Activate
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+                {pendingMemberships.length === 0 && (
+                  <tr><td colSpan={8}><div className="empty-state">✅ No pending memberships awaiting activation</div></td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
