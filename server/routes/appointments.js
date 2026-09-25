@@ -5,6 +5,7 @@ const { authenticate, authorize } = require('../middleware/auth');
 const { awardPointsAfterPayment, redeemPoints } = require('./loyalty');
 const { awardFirstVisitCashback, redeemCashback } = require('./cashback');
 const { getActiveOffer } = require('./offers');
+const { createGoogleCalendarEvent, deleteGoogleCalendarEvent, markGoogleCalendarEventCompleted } = require('../utils/googleCalendar');
 
 // Get appointments
 router.get('/', authenticate, async (req, res) => {
@@ -116,9 +117,66 @@ router.post('/', authenticate, authorize('super_admin', 'receptionist'), async (
       );
     }
 
+    // Check if specialist_id matches GOOGLE_CALENDAR_SPECIALIST_ID for Google Calendar sync
+    let googleCalendarEventId = null;
+    const configuredSpecialistId = process.env.GOOGLE_CALENDAR_SPECIALIST_ID ? parseInt(process.env.GOOGLE_CALENDAR_SPECIALIST_ID) : null;
+    const specialistIdNum = specialist_id ? parseInt(specialist_id) : null;
+    
+    console.log('📅 [ADMIN BOOKING] Checking Google Calendar sync...');
+    console.log('📅 [ADMIN BOOKING] specialist_id:', specialist_id, '(type:', typeof specialist_id, ')');
+    console.log('📅 [ADMIN BOOKING] specialistIdNum:', specialistIdNum, '(type:', typeof specialistIdNum, ')');
+    console.log('📅 [ADMIN BOOKING] configuredSpecialistId:', configuredSpecialistId, '(type:', typeof configuredSpecialistId, ')');
+    console.log('📅 [ADMIN BOOKING] Match?', specialistIdNum && configuredSpecialistId && specialistIdNum === configuredSpecialistId);
+
+    if (specialistIdNum && configuredSpecialistId && specialistIdNum === configuredSpecialistId) {
+      console.log('✅ [ADMIN BOOKING] Specialist ID matches! Proceeding with Google Calendar sync...');
+      try {
+        // Get customer name for Google Calendar
+        const customer = await client.query('SELECT name FROM customers WHERE id = $1', [customer_id]);
+        if (customer.rows.length) {
+          // Calculate total duration
+          const totalDuration = serviceRows.reduce((sum, s) => sum + (s.duration_minutes || 0), 0);
+          console.log('📅 [ADMIN BOOKING] Total duration calculated:', totalDuration, 'minutes');
+
+          // Prepare appointment data for Google Calendar
+          const googleCalendarData = {
+            customer_name: customer.rows[0].name,
+            services: serviceRows,
+            appointment_date: appointment_date,
+            notes: notes,
+            total_duration_minutes: totalDuration,
+          };
+
+          console.log('📅 [ADMIN BOOKING] Calling createGoogleCalendarEvent...');
+          // Create Google Calendar event
+          googleCalendarEventId = await createGoogleCalendarEvent(googleCalendarData);
+
+          if (googleCalendarEventId) {
+            console.log('✅ [ADMIN BOOKING] Google Calendar event created with ID:', googleCalendarEventId);
+            // Update appointment with Google Calendar event ID
+            await client.query(
+              `UPDATE appointments 
+               SET google_calendar_event_id = $1, google_calendar_synced = TRUE, google_calendar_synced_at = NOW()
+               WHERE id = $2`,
+              [googleCalendarEventId, appt.rows[0].id]
+            );
+            console.log('✅ [ADMIN BOOKING] Appointment updated with Google Calendar event ID');
+          } else {
+            console.warn('⚠️ [ADMIN BOOKING] Google Calendar event ID is null');
+          }
+        }
+      } catch (err) {
+        console.error('❌ [ADMIN BOOKING] Failed to create Google Calendar event:', err.message);
+        // Don't fail the appointment creation if Google Calendar sync fails
+      }
+    } else {
+      console.log('❌ [ADMIN BOOKING] Specialist ID does not match configured ID. Skipping Google Calendar sync.');
+    }
+
     await client.query('COMMIT');
     res.status(201).json({
       ...appt.rows[0],
+      google_calendar_event_id: googleCalendarEventId,
       membership_plan_name: membershipInfo?.plan_name || null,
       membership_tier: membershipInfo?.tier || null,
       membership_discount_percent: membershipInfo?.discount_percent || 0,
@@ -164,6 +222,16 @@ router.patch('/:id/status', authenticate, async (req, res) => {
              VALUES ($1,$2,$3) ON CONFLICT DO NOTHING`,
             [req.params.id, prod.product_id, prod.quantity_ml]
           );
+        }
+      }
+
+      // Mark Google Calendar event as completed if it exists
+      if (appt.rows[0].google_calendar_event_id) {
+        try {
+          await markGoogleCalendarEventCompleted(appt.rows[0].google_calendar_event_id);
+        } catch (err) {
+          console.error('⚠️ Failed to update Google Calendar event:', err.message);
+          // Don't fail the appointment status update if Google Calendar update fails
         }
       }
     }

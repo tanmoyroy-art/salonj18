@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { pool } = require('../db');
+const { createGoogleCalendarEvent } = require('../utils/googleCalendar');
 
 // Public: get all active services with media
 router.get('/services', async (req, res) => {
@@ -275,10 +276,63 @@ router.post('/book', async (req, res) => {
       );
     }
 
+    // Check if specialist_id matches GOOGLE_CALENDAR_SPECIALIST_ID for Google Calendar sync
+    let googleCalendarEventId = null;
+    const configuredSpecialistId = process.env.GOOGLE_CALENDAR_SPECIALIST_ID ? parseInt(process.env.GOOGLE_CALENDAR_SPECIALIST_ID) : null;
+    const specialistIdNum = specialist_id ? parseInt(specialist_id) : null;
+    
+    console.log('📅 [BOOKING] Checking Google Calendar sync...');
+    console.log('📅 [BOOKING] specialist_id:', specialist_id, '(type:', typeof specialist_id, ')');
+    console.log('📅 [BOOKING] specialistIdNum:', specialistIdNum, '(type:', typeof specialistIdNum, ')');
+    console.log('📅 [BOOKING] configuredSpecialistId:', configuredSpecialistId, '(type:', typeof configuredSpecialistId, ')');
+    console.log('📅 [BOOKING] Match?', specialistIdNum && configuredSpecialistId && specialistIdNum === configuredSpecialistId);
+
+    if (specialistIdNum && configuredSpecialistId && specialistIdNum === configuredSpecialistId) {
+      console.log('✅ [BOOKING] Specialist ID matches! Proceeding with Google Calendar sync...');
+      try {
+        // Calculate total duration
+        const totalDuration = serviceDetails.reduce((sum, s) => sum + (s.duration_minutes || 0), 0);
+        console.log('📅 [BOOKING] Total duration calculated:', totalDuration, 'minutes');
+
+        // Prepare appointment data for Google Calendar
+        const googleCalendarData = {
+          customer_name: customer.name,
+          services: serviceDetails,
+          appointment_date: appointment_date,
+          notes: notes,
+          total_duration_minutes: totalDuration,
+        };
+
+        console.log('📅 [BOOKING] Calling createGoogleCalendarEvent...');
+        // Create Google Calendar event
+        googleCalendarEventId = await createGoogleCalendarEvent(googleCalendarData);
+
+        if (googleCalendarEventId) {
+          console.log('✅ [BOOKING] Google Calendar event created with ID:', googleCalendarEventId);
+          // Update appointment with Google Calendar event ID
+          await client.query(
+            `UPDATE appointments 
+             SET google_calendar_event_id = $1, google_calendar_synced = TRUE, google_calendar_synced_at = NOW()
+             WHERE id = $2`,
+            [googleCalendarEventId, appt.rows[0].id]
+          );
+          console.log('✅ [BOOKING] Appointment updated with Google Calendar event ID');
+        } else {
+          console.warn('⚠️ [BOOKING] Google Calendar event ID is null');
+        }
+      } catch (err) {
+        console.error('❌ [BOOKING] Failed to create Google Calendar event:', err.message);
+        // Don't fail the appointment creation if Google Calendar sync fails
+      }
+    } else {
+      console.log('❌ [BOOKING] Specialist ID does not match configured ID. Skipping Google Calendar sync.');
+    }
+
     await client.query('COMMIT');
     res.status(201).json({
       success: true,
       appointment_id: appt.rows[0].id,
+      google_calendar_event_id: googleCalendarEventId,
       total: totalAmount,
       membership_discount: membershipDiscount,
       membership_purchase_id: membershipPurchaseId,
