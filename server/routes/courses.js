@@ -69,6 +69,9 @@ router.post('/public/enroll', async (req, res) => {
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
+    // Convert empty string experience_years to NULL or 0
+    const experienceYears = experience_years === '' || experience_years === null || experience_years === undefined ? 0 : parseInt(experience_years);
+
     // Calculate total amount from selected courses
     let totalAmount = 0;
     const courseDetails = [];
@@ -111,7 +114,7 @@ router.post('/public/enroll', async (req, res) => {
       [
         enrollmentRef, full_name, date_of_birth, gender, contact_number, whatsapp_number, email,
         residential_address, city, state, pin_code, educational_qualification,
-        prior_beauty_experience, experience_years, selected_course_ids,
+        prior_beauty_experience, experienceYears, selected_course_ids,
         learning_mode, batch_preference, payment_plan, payment_mode,
         totalAmount, 'pending', 'pending'
       ]
