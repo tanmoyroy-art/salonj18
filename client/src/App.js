@@ -17,6 +17,9 @@ import Users from './pages/Users';
 import Membership from './pages/Membership';
 import Loyalty from './pages/Loyalty';
 import Offers from './pages/Offers';
+import Courses from './pages/Courses';
+import EnrollmentDetails from './pages/EnrollmentDetails';
+import CourseEnrollment from './pages/CourseEnrollment';
 import PublicBooking from './pages/PublicBooking';
 import { Toaster } from 'react-hot-toast';
 
@@ -43,8 +46,9 @@ function AppRoutes() {
 
   return (
     <Routes>
-      {/* Public booking — no login needed */}
+      {/* Public pages — no login needed */}
       <Route path="/appointment" element={<PublicBooking />} />
+      <Route path="/enroll" element={<CourseEnrollment />} />
 
       <Route path="/login" element={user ? <Navigate to="/" replace /> : <Login />} />
 
@@ -115,6 +119,18 @@ function AppRoutes() {
       <Route path="/offers" element={
         <RequireAuth roles={['super_admin']}>
           <AppLayout><Offers /></AppLayout>
+        </RequireAuth>
+      } />
+
+      <Route path="/courses" element={
+        <RequireAuth roles={['super_admin']}>
+          <AppLayout><Courses /></AppLayout>
+        </RequireAuth>
+      } />
+
+      <Route path="/courses/enrollment/:id" element={
+        <RequireAuth roles={['super_admin']}>
+          <AppLayout><EnrollmentDetails /></AppLayout>
         </RequireAuth>
       } />
 

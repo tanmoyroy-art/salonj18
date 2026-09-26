@@ -8,10 +8,29 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 
 // Middleware
-app.use(cors({
-  origin: process.env.CLIENT_URL || 'http://localhost:3000',
-  credentials: true
-}));
+// CORS configuration - Allow public enrollment endpoints from any origin
+app.use((req, res, next) => {
+  // Public endpoints can be accessed from any origin
+  if (req.path.startsWith('/api/courses/public')) {
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    if (req.method === 'OPTIONS') {
+      return res.sendStatus(200);
+    }
+  } else {
+    // Other endpoints restricted to CLIENT_URL
+    const clientUrl = process.env.CLIENT_URL || 'http://localhost:3000';
+    res.header('Access-Control-Allow-Origin', clientUrl);
+    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    res.header('Access-Control-Allow-Credentials', 'true');
+    if (req.method === 'OPTIONS') {
+      return res.sendStatus(200);
+    }
+  }
+  next();
+});
 app.use(express.json());
 
 // Serve uploaded service media files
@@ -31,6 +50,7 @@ app.use('/api/public', require('./routes/public'));
 app.use('/api/payment', require('./routes/payment'));
 app.use('/api/offers', require('./routes/offers'));
 app.use('/api/page-view', require('./routes/pageview'));
+app.use('/api/courses', require('./routes/courses'));
 
 // Health check
 app.get('/api/health', (req, res) => {

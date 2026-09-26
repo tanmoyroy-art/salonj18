@@ -19,6 +19,7 @@ const navConfig = {
       { icon: '🎫', label: 'Membership', path: '/membership' },
       { icon: '⭐', label: 'Loyalty Points', path: '/loyalty' },
       { icon: '🎉', label: 'Festival Offers', path: '/offers' },
+      { icon: '🎓', label: 'Courses', path: '/courses' },
     ]},
     { section: 'System', links: [
       { icon: '👤', label: 'Users', path: '/users' },
