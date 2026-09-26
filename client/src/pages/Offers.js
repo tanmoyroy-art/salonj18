@@ -12,6 +12,8 @@ function OfferFormModal({ offer, services, onClose, onSuccess }) {
     is_active: offer?.is_active ?? true,
     service_ids: offer?.services?.map(s => s.service_id) || [],
   });
+  const [mediaFile, setMediaFile] = useState(null);
+  const [mediaPreview, setMediaPreview] = useState(offer?.media_url || null);
   const [loading, setLoading] = useState(false);
 
   const toggleService = (id) => {
@@ -26,6 +28,31 @@ function OfferFormModal({ offer, services, onClose, onSuccess }) {
   const selectAll = () => setForm(f => ({ ...f, service_ids: services.map(s => s.id) }));
   const clearAll  = () => setForm(f => ({ ...f, service_ids: [] }));
 
+  const handleMediaChange = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const validTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'video/mp4', 'video/quicktime', 'video/mpeg'];
+    if (!validTypes.includes(file.mimetype || file.type)) {
+      alert('Only image (JPEG, PNG, GIF, WebP) and video (MP4, MOV, MPEG) files are allowed');
+      return;
+    }
+
+    if (file.size > 50 * 1024 * 1024) {
+      alert('File size must be less than 50MB');
+      return;
+    }
+
+    setMediaFile(file);
+
+    // Create preview
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      setMediaPreview(e.target?.result);
+    };
+    reader.readAsDataURL(file);
+  };
+
   const handleSubmit = async () => {
     if (!form.name || !form.discount_percent || !form.start_date || !form.end_date)
       return alert('Please fill all required fields');
@@ -36,10 +63,27 @@ function OfferFormModal({ offer, services, onClose, onSuccess }) {
 
     setLoading(true);
     try {
+      const formData = new FormData();
+      formData.append('name', form.name);
+      formData.append('description', form.description);
+      formData.append('discount_percent', form.discount_percent);
+      formData.append('start_date', form.start_date);
+      formData.append('end_date', form.end_date);
+      formData.append('is_active', form.is_active);
+      formData.append('service_ids', JSON.stringify(form.service_ids));
+      
+      if (mediaFile) {
+        formData.append('media', mediaFile);
+      }
+
       if (offer?.id) {
-        await api.put(`/offers/${offer.id}`, form);
+        await api.put(`/offers/${offer.id}`, formData, {
+          headers: { 'Content-Type': 'multipart/form-data' }
+        });
       } else {
-        await api.post('/offers', form);
+        await api.post('/offers', formData, {
+          headers: { 'Content-Type': 'multipart/form-data' }
+        });
       }
       onSuccess();
       onClose();
@@ -99,6 +143,59 @@ function OfferFormModal({ offer, services, onClose, onSuccess }) {
             <label className="form-label">Description (optional)</label>
             <input className="form-control" placeholder="Short description shown to customers"
               value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} />
+          </div>
+
+          {/* Media Upload */}
+          <div className="form-group">
+            <label className="form-label">Offer Image or Video (optional)</label>
+            <div style={{ 
+              border: '2px dashed #E5E7EB', 
+              borderRadius: 8, 
+              padding: 20, 
+              textAlign: 'center',
+              cursor: 'pointer',
+              background: '#F9FAFB',
+              transition: 'all 0.2s'
+            }}>
+              <input 
+                type="file" 
+                id="media-upload"
+                style={{ display: 'none' }}
+                accept="image/*,video/*"
+                onChange={handleMediaChange}
+              />
+              <label htmlFor="media-upload" style={{ cursor: 'pointer', display: 'block' }}>
+                {mediaPreview ? (
+                  <div>
+                    {mediaFile?.type?.startsWith('image/') || mediaPreview?.startsWith('data:image/') ? (
+                      <img src={mediaPreview} alt="preview" style={{ maxHeight: 200, borderRadius: 6, marginBottom: 8 }} />
+                    ) : (
+                      <video style={{ maxHeight: 200, borderRadius: 6, marginBottom: 8 }} controls>
+                        <source src={mediaPreview} />
+                      </video>
+                    )}
+                    <div style={{ fontSize: 13, color: '#6B7280', marginTop: 8 }}>
+                      Click to change file
+                    </div>
+                  </div>
+                ) : (
+                  <div>
+                    <div style={{ fontSize: 28, marginBottom: 8 }}>📸</div>
+                    <div style={{ fontSize: 13, fontWeight: 500, color: '#374151' }}>
+                      Drop image or video here
+                    </div>
+                    <div style={{ fontSize: 12, color: '#9CA3AF', marginTop: 4 }}>
+                      or click to browse (Max 50MB)
+                    </div>
+                  </div>
+                )}
+              </label>
+            </div>
+            {mediaFile && (
+              <div style={{ fontSize: 12, color: '#6B7280', marginTop: 8 }}>
+                📁 {mediaFile.name} ({(mediaFile.size / 1024 / 1024).toFixed(2)}MB)
+              </div>
+            )}
           </div>
 
           {offer?.id && (
@@ -241,6 +338,27 @@ export default function Offers() {
               {isLive && (
                 <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 4, background: 'linear-gradient(90deg,#F59E0B,#D97706)' }} />
               )}
+              
+              {/* Media Display */}
+              {offer.media_url && (
+                <div style={{ marginBottom: 12, borderRadius: 8, overflow: 'hidden', background: '#F3F4F6', height: 200 }}>
+                  {offer.media_type === 'image' ? (
+                    <img 
+                      src={offer.media_url} 
+                      alt={offer.name}
+                      style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                    />
+                  ) : (
+                    <video 
+                      style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                      controls
+                    >
+                      <source src={offer.media_url} />
+                    </video>
+                  )}
+                </div>
+              )}
+
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
                 <div>
                   <div style={{ fontWeight: 800, fontSize: 16 }}>{offer.name}</div>
